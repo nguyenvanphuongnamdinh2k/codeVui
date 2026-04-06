@@ -1,0 +1,559 @@
+package com.example.codevui.ui.favorites
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.VideoFile
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
+import coil.request.ImageRequest
+import com.example.codevui.AppImageLoader
+import com.example.codevui.model.FavoriteItem
+import com.example.codevui.model.FileType
+import com.example.codevui.ui.selection.SelectionCheckbox
+import com.example.codevui.ui.thumbnail.ThumbnailData
+import com.example.codevui.util.formatDateFull
+import com.example.codevui.util.formatFileSize
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Main Screen
+// ══════════════════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FavoritesScreen(
+    viewModel: FavoritesViewModel = viewModel(),
+    onBack: () -> Unit = {},
+    onItemClick: (FavoriteItem) -> Unit = {}
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Selection state
+    var selectedPaths by remember { mutableStateOf(emptySet<String>()) }
+    var isSelectionMode by remember { mutableStateOf(false) }
+
+    fun toggle(path: String) {
+        selectedPaths = if (path in selectedPaths) {
+            val newSet = selectedPaths - path
+            if (newSet.isEmpty()) {
+                isSelectionMode = false
+                emptySet()
+            } else newSet
+        } else selectedPaths + path
+    }
+
+    fun enterSelectionMode(path: String) {
+        selectedPaths = setOf(path)
+        isSelectionMode = true
+    }
+
+    fun exitSelection() {
+        selectedPaths = emptySet()
+        isSelectionMode = false
+    }
+
+    fun selectAll() {
+        if (selectedPaths.size == uiState.favorites.size) {
+            selectedPaths = emptySet()
+            isSelectionMode = false
+        } else {
+            selectedPaths = uiState.favorites.map { it.path }.toSet()
+        }
+    }
+
+    // Snackbar for delete result
+    LaunchedEffect(uiState.deletedCount) {
+        if (uiState.deletedCount > 0) {
+            snackbarHostState.showSnackbar("Đã xóa ${uiState.deletedCount} khỏi yêu thích")
+            viewModel.clearDeletedCount()
+        }
+    }
+
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearError()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { },
+                navigationIcon = {
+                    IconButton(onClick = {
+                        if (isSelectionMode) exitSelection() else onBack()
+                    }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Quay lại")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = Color.White
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            // ── Header ──────────────────────────────────────────────
+            FavoritesHeader(
+                totalCount = uiState.favorites.size,
+                isSelectionMode = isSelectionMode,
+                selectedCount = selectedPaths.size,
+                onSelectAll = { selectAll() },
+                onCancel = { exitSelection() }
+            )
+
+            // ── Content ──────────────────────────────────────────
+            if (uiState.isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(strokeWidth = 2.dp)
+                }
+            } else if (uiState.favorites.isEmpty()) {
+                // Empty state
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Outlined.Star,
+                            contentDescription = null,
+                            tint = Color(0xFFDDDDDD),
+                            modifier = Modifier.size(72.dp)
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "Chưa có mục yêu thích",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF666666)
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Nhấn giữ để thêm file vào yêu thích",
+                            fontSize = 13.sp,
+                            color = Color(0xFFAAAAAA)
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    itemsIndexed(
+                        items = uiState.favorites,
+                        key = { _, item -> item.fileId }
+                    ) { index, item ->
+                        FavoriteListItem(
+                            item = item,
+                            isSelectionMode = isSelectionMode,
+                            isSelected = item.path in selectedPaths,
+                            showDivider = index < uiState.favorites.lastIndex,
+                            onClick = {
+                                if (isSelectionMode) {
+                                    toggle(item.path)
+                                } else {
+                                    onItemClick(item)
+                                }
+                            },
+                            onLongClick = {
+                                if (!isSelectionMode) {
+                                    enterSelectionMode(item.path)
+                                }
+                            }
+                        )
+                    }
+
+                    item { Spacer(Modifier.height(80.dp)) }
+                }
+            }
+        }
+
+        // ── Bottom action bar ─────────────────────────────────────
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            AnimatedVisibility(
+                visible = isSelectionMode && selectedPaths.isNotEmpty(),
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+            FavoritesBottomBar(
+                selectedCount = selectedPaths.size,
+                onDelete = {
+                    viewModel.deleteFavorite(selectedPaths.toList())
+                    exitSelection()
+                }
+            )
+            }
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Header
+// ══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun FavoritesHeader(
+    totalCount: Int,
+    isSelectionMode: Boolean,
+    selectedCount: Int,
+    onSelectAll: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        if (isSelectionMode) {
+            // Selection mode header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onSelectAll) {
+                    SelectionCheckbox(
+                        isSelected = selectedCount == totalCount && totalCount > 0,
+                        onClick = onSelectAll
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text("Tất cả", fontSize = 13.sp, color = Color(0xFF666666))
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = "Đã chọn $selectedCount",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1A1A1A)
+                )
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onCancel) {
+                    Text("Thoát", fontWeight = FontWeight.Bold)
+                }
+            }
+        } else {
+            // Normal header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Yêu thích",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1A1A1A)
+                    )
+                    if (totalCount > 0) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "$totalCount mục",
+                            fontSize = 14.sp,
+                            color = Color(0xFF888888)
+                        )
+                    }
+                }
+
+                Icon(
+                    Icons.Outlined.Star,
+                    contentDescription = null,
+                    tint = Color(0xFFFFB300),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+
+            if (totalCount > 0) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Nhấn giữ để chọn và xóa khỏi yêu thích",
+                    fontSize = 13.sp,
+                    color = Color(0xFFAAAAAA)
+                )
+            }
+        }
+    }
+    HorizontalDivider(thickness = 0.5.dp, color = Color(0xFFF0F0F0))
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// List Item
+// ══════════════════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FavoriteListItem(
+    item: FavoriteItem,
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
+    showDivider: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    val fileType = FileType.fromMimeType(item.mimeType)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (isSelected) Color(0xFFF0F6FF) else Color.Transparent)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Checkbox
+        if (isSelectionMode) {
+            SelectionCheckbox(
+                isSelected = isSelected,
+                onClick = onClick
+            )
+            Spacer(Modifier.width(12.dp))
+        }
+
+        // Thumbnail
+        FavoriteThumbnail(
+            item = item,
+            fileType = fileType,
+            modifier = Modifier.size(52.dp)
+        )
+
+        Spacer(Modifier.width(14.dp))
+
+        // Text
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.name,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color(0xFF1A1A1A),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (item.isDirectory) "Thư mục" else formatFileSize(item.size),
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999)
+                )
+                if (!item.isDirectory && item.dateModified > 0) {
+                    Spacer(Modifier.width(6.dp))
+                    Text("•", color = Color(0xFFDDDDDD))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = formatDateFull(item.dateModified),
+                        fontSize = 12.sp,
+                        color = Color(0xFF999999)
+                    )
+                }
+            }
+        }
+
+        if (!isSelectionMode) {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = Color(0xFFDDDDDD),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+
+    if (showDivider) {
+        HorizontalDivider(
+            modifier = Modifier.padding(start = 86.dp, end = 20.dp),
+            thickness = 0.5.dp,
+            color = Color(0xFFF0F0F0)
+        )
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Thumbnail
+// ══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun FavoriteThumbnail(
+    item: FavoriteItem,
+    fileType: FileType,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFFF5F5F5)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!item.isDirectory && item.uri != android.net.Uri.EMPTY) {
+            val thumbnailData: ThumbnailData? = when (fileType) {
+                FileType.IMAGE, FileType.VIDEO -> ThumbnailData.Video(
+                    uri = item.uri,
+                    path = item.path
+                )
+                FileType.AUDIO -> ThumbnailData.Audio(
+                    uri = item.uri,
+                    path = item.path
+                )
+                FileType.APK -> ThumbnailData.Apk(
+                    uri = item.uri,
+                    path = item.path
+                )
+                else -> null
+            }
+
+            if (thumbnailData != null) {
+                val imageRequest = ImageRequest.Builder(context)
+                    .data(thumbnailData)
+                    .crossfade(true)
+                    .build()
+
+                SubcomposeAsyncImage(
+                    model = imageRequest,
+                    imageLoader = AppImageLoader.get(context),
+                    contentDescription = item.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    loading = {
+                        Icon(
+                            getFavoriteIcon(fileType, item.isDirectory),
+                            contentDescription = null,
+                            tint = Color(0xFF888888),
+                            modifier = Modifier.size(26.dp)
+                        )
+                    },
+                    error = {
+                        Icon(
+                            getFavoriteIcon(fileType, item.isDirectory),
+                            contentDescription = null,
+                            tint = Color(0xFF888888),
+                            modifier = Modifier.size(26.dp)
+                        )
+                    },
+                    success = {
+                        SubcomposeAsyncImageContent(modifier = Modifier.fillMaxSize())
+                    }
+                )
+            } else {
+                Icon(
+                    getFavoriteIcon(fileType, item.isDirectory),
+                    contentDescription = null,
+                    tint = Color(0xFF888888),
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        } else {
+            Icon(
+                getFavoriteIcon(fileType, item.isDirectory),
+                contentDescription = null,
+                tint = Color(0xFF888888),
+                modifier = Modifier.size(26.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun getFavoriteIcon(fileType: FileType, isDirectory: Boolean): androidx.compose.ui.graphics.vector.ImageVector =
+    when {
+        isDirectory -> Icons.Default.Folder
+        fileType == FileType.IMAGE -> Icons.Default.Image
+        fileType == FileType.VIDEO -> Icons.Default.VideoFile
+        fileType == FileType.AUDIO -> Icons.Default.AudioFile
+        fileType == FileType.DOC -> Icons.Default.Description
+        fileType == FileType.APK -> Icons.Default.Android
+        fileType == FileType.ARCHIVE -> Icons.Default.Archive
+        else -> Icons.Default.InsertDriveFile
+    }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Bottom action bar
+// ══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun FavoritesBottomBar(
+    selectedCount: Int,
+    onDelete: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.White,
+        shadowElevation = 8.dp
+    ) {
+        Column {
+            HorizontalDivider(thickness = 0.5.dp, color = Color(0xFFE0E0E0))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "$selectedCount mục được chọn",
+                    fontSize = 13.sp,
+                    color = Color(0xFF666666),
+                    modifier = Modifier.weight(1f)
+                )
+
+                Button(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("Xóa khỏi yêu thích", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
