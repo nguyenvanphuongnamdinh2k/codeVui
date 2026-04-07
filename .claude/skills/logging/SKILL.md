@@ -85,6 +85,31 @@ try {
 | `w` WARN | Unexpected state (file not found, permission denied) | All builds |
 | `e` ERROR | Exception, operation failed | All builds |
 
+## FavoriteManager Logging
+
+```kotlin
+// toFavoriteItem — debug mimeType và Uri resolution
+log.d("toFavoriteItem: path=$path, storedMime=$storedMime, resolvedMime=$mime, uri=$uri")
+
+// resolveContentUri — debug MediaStore lookup
+log.d("resolveContentUri: path=$path → $uri")
+log.w("resolveContentUri: no MediaStore entry for path=$path")
+
+// resolveMimeType — debug extension → MIME
+log.d("resolveMimeType: path=$path, ext=$ext, mime=$mime")
+```
+
+## FavoriteThumbnail Logging
+
+```kotlin
+// Composable top-level — debug props
+log.d("FavoriteThumbnail: name=$name, mimeType=$mimeType, uri=$uri, isDir=$isDir, fileType=$fileType")
+log.d("FavoriteThumbnail: thumbnailData=$thumbnailData")
+log.d("FavoriteThumbnail SUCCESS: name=$name")
+log.w("FavoriteThumbnail ERROR: name=$name, fileType=$fileType, thumbnailData=$thumbnailData")
+log.w("FavoriteThumbnail: no thumbnail branch — fileType=$fileType, uri=$uri")
+```
+
 ## What NOT to Log
 
 ```

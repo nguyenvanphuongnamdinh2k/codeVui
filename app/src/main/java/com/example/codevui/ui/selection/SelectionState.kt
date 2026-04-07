@@ -43,9 +43,7 @@ class SelectionState(private val savedStateHandle: SavedStateHandle) {
 
     fun toggle(id: String) {
         selectedIds = if (id in selectedIds) {
-            val newSet = selectedIds - id
-            if (newSet.isEmpty()) isSelectionMode = false
-            newSet
+            selectedIds - id  // Giữ selection mode — chỉ thoát khi user nhấn nút Thoát
         } else {
             selectedIds + id
         }
@@ -54,7 +52,7 @@ class SelectionState(private val savedStateHandle: SavedStateHandle) {
 
     fun selectAll(allIds: List<String>) {
         selectedIds = if (selectedIds.size == allIds.size) emptySet() else allIds.toSet()
-        if (selectedIds.isEmpty()) isSelectionMode = false
+        // Giữ selection mode — chỉ thoát khi user nhấn nút Thoát
         save()
     }
 

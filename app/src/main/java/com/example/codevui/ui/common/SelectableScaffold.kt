@@ -81,7 +81,7 @@ fun SelectableScaffold(
         },
         bottomBar = {
             AnimatedVisibility(
-                visible = selection.isSelectionMode,
+                visible = selection.isSelectionMode && selection.selectedCount > 0,
                 enter = slideInVertically { it },
                 exit = slideOutVertically { it }
             ) {

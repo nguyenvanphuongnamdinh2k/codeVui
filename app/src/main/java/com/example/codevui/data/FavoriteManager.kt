@@ -250,17 +250,22 @@ object FavoriteManager {
 
     /** Convert Entity → Domain model, đồng thời resolve ContentUri cho thumbnail */
     private fun FavoriteEntity.toFavoriteItem(context: Context): FavoriteItem {
-        val contentUri = if (!isDirectory) {
-            resolveContentUri(context, path)
+        // Resolve content URI và MIME type (nếu stored value là null)
+        val (contentUri, resolvedMimeType) = if (!isDirectory) {
+            val uri = resolveContentUri(context, path)
+            val storedMime = mimeType
+            val mime = storedMime ?: resolveMimeType(path)
+            log.d("toFavoriteItem: path=$path, storedMime=$storedMime, resolvedMime=$mime, uri=$uri")
+            uri to mime
         } else {
-            Uri.EMPTY
+            Uri.EMPTY to null
         }
         return FavoriteItem(
             fileId = fileId,
             name = name,
             path = path,
             size = size,
-            mimeType = mimeType,
+            mimeType = resolvedMimeType,
             isDirectory = isDirectory,
             dateModified = dateModified,
             addedAt = addedAt,
@@ -277,7 +282,7 @@ object FavoriteManager {
         return try {
             val projection = arrayOf(MediaStore.Files.FileColumns._ID)
             val selection = "${MediaStore.Files.FileColumns.DATA} = ?"
-            context.contentResolver.query(
+            val uri = context.contentResolver.query(
                 MediaStore.Files.getContentUri("external"),
                 projection,
                 selection,
@@ -289,10 +294,44 @@ object FavoriteManager {
                     MediaStore.Files.getContentUri("external").buildUpon()
                         .appendPath(id.toString())
                         .build()
-                } else Uri.EMPTY
+                } else {
+                    log.w("resolveContentUri: no MediaStore entry for path=$path")
+                    Uri.EMPTY
+                }
             } ?: Uri.EMPTY
-        } catch (_: Exception) {
+            log.d("resolveContentUri: path=$path → $uri")
+            uri
+        } catch (e: Exception) {
+            log.e("resolveContentUri: failed for path=$path", e)
             Uri.EMPTY
+        }
+    }
+
+    /**
+     * Resolve MIME type từ file extension.
+     * Dùng khi mimeType trong DB là null.
+     */
+    private fun resolveMimeType(path: String): String? {
+        return try {
+            val ext = path.substringAfterLast('.', "").lowercase()
+            val mime = when (ext) {
+                "jpg", "jpeg", "png", "gif", "bmp", "webp", "heic", "heif" -> "image/jpeg"
+                "mp4", "mkv", "avi", "mov", "wmv", "flv", "3gp", "webm" -> "video/mp4"
+                "mp3", "wav", "flac", "aac", "ogg", "m4a", "wma" -> "audio/mpeg"
+                "apk" -> "application/vnd.android.package-archive"
+                "zip", "rar", "7z", "tar", "gz" -> "application/zip"
+                "pdf" -> "application/pdf"
+                "doc", "docx" -> "application/msword"
+                "xls", "xlsx" -> "application/vnd.ms-excel"
+                "ppt", "pptx" -> "application/vnd.ms-powerpoint"
+                "txt", "log", "md", "json", "xml", "csv" -> "text/plain"
+                else -> null
+            }
+            log.d("resolveMimeType: path=$path, ext=$ext, mime=$mime")
+            mime
+        } catch (_: Exception) {
+            log.e("resolveMimeType: failed for path=$path")
+            null
         }
     }
 }

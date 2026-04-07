@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -337,12 +338,20 @@ fun selectionActionHandler(
                     var success = 0
                     for (path in paths) {
                         val file = File(path)
+                        val mimeType = if (file.isFile) {
+                            android.webkit.MimeTypeMap.getSingleton()
+                                .getMimeTypeFromExtension(file.extension.lowercase())
+                                ?: when (file.extension.lowercase()) {
+                                    "apk" -> "application/vnd.android.package-archive"
+                                    else -> null
+                                }
+                        } else null
                         val added = FavoriteManager.addFavorite(
                             context = context,
                             path = path,
                             name = file.name,
                             size = if (file.isFile) file.length() else 0L,
-                            mimeType = null,
+                            mimeType = mimeType,
                             isDirectory = file.isDirectory,
                             dateModified = file.lastModified() / 1000
                         )

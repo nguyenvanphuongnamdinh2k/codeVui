@@ -1,7 +1,7 @@
 # CodeVui — CLAUDE.md
 
 > Project documentation cho AI assistant. Đọc file này TRƯỚC TIÊN trước khi bắt đầu bất kỳ task nào.
-> Last updated: 2026-04-04.
+> Last updated: 2026-04-06.
 
 ---
 
@@ -51,6 +51,7 @@ com.example.codevui/
 │   ├── MediaStoreScanner.kt       # MediaScannerConnection → notify other apps
 │   ├── MediaStoreObserver.kt      # ContentObserver → Flow (auto-reload)
 │   ├── RecommendRepository.kt     # Recommend cards (MyFiles style) — Strategy pattern
+│   ├── FavoriteManager.kt         # Yêu thích — Room DB CRUD + MIME/path resolution
 │   └── db/
 │       ├── AppDatabase.kt         # Room singleton, v1→v2 migration
 │       ├── TrashDao.kt            # Room DAO
@@ -147,8 +148,8 @@ com.example.codevui/
 │   │   └── RecommendUiState.kt       # RecommendCard, RecommendFile, RecommendType
 │   │
 │   ├── favorites/
-│   │   ├── FavoritesScreen.kt   # Yêu thích — list, selection, thumbnail
-│   │   ├── FavoritesViewModel.kt
+│   │   ├── FavoritesScreen.kt   # Yêu thích — list, selection mode, thumbnail (Coil), FavoriteThumbnail với imageLoaded state
+│   │   ├── FavoritesViewModel.kt  # observeFavorites (Room Flow)
 │   │   ├── FavoritesUiState.kt
 │   │
 │   ├── trash/
@@ -382,6 +383,24 @@ object MediaStoreObserver {
 - Register `MediaStore.Files.getContentUri("external")` với `notifyForDescendants=true`
 - Tự `unregisterContentObserver` khi flow bị cancel
 - Dùng trong `BaseMediaStoreViewModel` để auto-reload khi MediaStore thay đổi
+
+### `FavoriteManager.kt`
+Singleton quản lý favorites (Room DB).
+
+| API | Mô tả |
+|---|---|
+| `observeFavorites(context)` | Flow → auto-update UI khi DB thay đổi |
+| `addFavorite(...)` | Thêm file/folder vào favorites |
+| `removeFavorite(path)` | Xóa 1 file khỏi favorites |
+| `removeFavorites(paths)` | Xóa nhiều file |
+| `toggleFavorite(...)` | Toggle thêm/xóa |
+| `validateFavorites(context)` | Xóa favorites không tồn tại (lazy validation) |
+| `reorderFavorites(paths)` | Cập nhật sortOrder sau kéo thả |
+
+**Lưu ý quan trọng:**
+- `toFavoriteItem()` resolve mimeType từ extension khi stored value là null → đảm bảo FileType đúng cho thumbnail
+- `resolveContentUri()` query MediaStore để lấy content:// Uri cho thumbnail loading
+- `resolveMimeType(path)` fallback khi DB mimeType = null
 
 ### `RecommendRepository.kt`
 Strategy pattern cho recommendation cards (MyFiles style). Instantiate với Context.
@@ -708,14 +727,32 @@ Samsung My Files style.
 | Fetcher | Method |
 |---|---|
 | `VideoThumbnailFetcher` | ContentResolver.loadThumbnail (Q+) / ThumbnailUtils (legacy) |
-| `AudioThumbnailFetcher` | MediaMetadataRetriever.embeddedPicture |
-| `ApkThumbnailFetcher` | PackageManager.getApplicationIcon() → Bitmap |
+| `AudioThumbnailFetcher` | MediaMetadataRetriever.embeddedPicture (xử lý cả file:// và content:// Uri) |
+| `ApkThumbnailFetcher` | PackageManager.getApplicationIcon() → Bitmap (xử lý cả file:// và content:// Uri) |
 | `ArchiveThumbnailFetcher` | ArchiveReader.extractToTemp → BitmapFactory.decodeFile |
 
 **Architecture:**
 - `ThumbnailFetcher` (abstract base): chứa `fetch()` method + abstract `extractBitmap()`
 - `ThumbnailData` (sealed class): Video/Audio/Apk/Archive data classes
 - `ThumbnailManager`: singleton đăng ký factories vào ImageLoader
+
+**Lưu ý quan trọng khi dùng ThumbnailData:**
+- Luôn check `path.isNotEmpty()` trước khi tạo ThumbnailData.Video/Audio/Apk
+- IMAGE dùng Uri trực tiếp, không cần custom fetcher
+- `FavoriteThumbnail` track `imageLoaded` state — chỉ có background khi chưa load xong
+
+### Selection Mode Pattern
+**Chỉ thoát selection mode khi user nhấn nút Thoát.**
+
+| Hàm | Hành vi |
+|---|---|
+| `toggle(id)` | Bỏ check → xóa khỏi selectedIds, **giữ mode** |
+| `selectAll(ids)` | Bỏ check all → empty set, **giữ mode** |
+| `exit()` | Thoát mode — CHỈ gọi khi nhấn nút Thoát |
+
+**Bottom bar:** `visible = isSelectionMode && selectedCount > 0`
+- Khi selectedCount=0 → bottom bar ẩn, nhưng mode vẫn bật
+- Header vẫn hiện "Đã chọn 0" + nút Thoát
 
 ---
 

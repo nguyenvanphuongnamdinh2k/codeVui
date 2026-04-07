@@ -59,11 +59,7 @@ fun TrashScreen(
 
     fun toggle(id: String) {
         selectedIds = if (id in selectedIds) {
-            val newSet = selectedIds - id
-            if (newSet.isEmpty()) {
-                isSelectionMode = false
-                emptySet()
-            } else newSet
+            selectedIds - id  // Giữ selection mode — chỉ thoát khi user nhấn nút Thoát
         } else selectedIds + id
     }
 
@@ -78,8 +74,11 @@ fun TrashScreen(
     }
 
     fun selectAll() {
-        selectedIds = if (selectedIds.size == allIds.size) emptySet() else allIds.toSet()
-        if (selectedIds.isEmpty()) isSelectionMode = false
+        if (selectedIds.size == allIds.size) {
+            selectedIds = emptySet()
+        } else {
+            selectedIds = allIds.toSet()
+        }
     }
 
     OperationResultSnackbar(

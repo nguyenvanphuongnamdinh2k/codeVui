@@ -19,6 +19,8 @@
 | 2026-04-03 | Claude | Hoàn thành Task #011: Fix SelectionCheckbox không hiện dấu tích toàn app |
 | 2026-04-03 | Claude | Hoàn thành Task #012: Tạo UnusedAppsScreen (Samsung My Files style) |
 | 2026-04-04 | Claude | Hoàn thành Task #013: Triển khai Favorites (MyFiles style) — Room DB, FavoritesScreen, DrawerPane, HomeScreen |
+| 2026-04-06 | Claude | Hoàn thành Task #014: Fix Favorites thumbnail không load (mimeType null + AudioThumbnailFetcher API lỗi) |
+| 2026-04-06 | Claude | Hoàn thành Task #015: Sửa selection mode — giữ mode khi uncheck hết, chỉ thoát khi nhấn Thoát |
 
 ---
 
@@ -148,6 +150,36 @@ _(Không có task nào đang làm)_
 - MediaStore content URI resolution cho thumbnails
 - Flow observer từ FavoriteManager.observeFavorites() → auto-update UI
 - Selection mode: mutableStateOf + isSelectionMode boolean
+
+
+### Task #014 — Fix Favorites thumbnail không load
+**Ngày:** 2026-04-06
+**Mô tả:** Thumbnail không hiển thị trên FavoritesScreen. Root cause: (1) mimeType null khi thêm vào favorites → FileType.fromMimeType(null)=OTHER → không vào nhánh IMAGE, (2) AudioThumbnailFetcher dùng API không tồn tại `setDataSource(context, uri)`, (3) FavoriteThumbnail tạo ThumbnailData mà không check path.isNotEmpty(), (4) ApkThumbnailFetcher không resolve content:// Uri.
+
+**Files đã sửa:**
+- `data/FavoriteManager.kt`: Thêm resolveMimeType(path) fallback + dùng trong toFavoriteItem() + thêm log debug
+- `data/FavoriteManager.kt`: resolveContentUri() thêm log + xử lý Uri.EMPTY
+- `ui/selection/SelectionActionHandler.kt`: Dùng MimeTypeMap.getMimeTypeFromExtension() khi gọi addFavorite()
+- `ui/thumbnail/AudioThumbnailFetcher.kt`: Viết lại hoàn toàn — xử lý file:// và content:// Uri, dùng ParcelFileDescriptor
+- `ui/thumbnail/ApkThumbnailFetcher.kt`: Viết lại — xử lý content:// Uri, query MediaStore bằng tên file
+- `ui/favorites/FavoritesScreen.kt`: FavoriteThumbnail — check path.isNotEmpty() trước khi tạo ThumbnailData, IMAGE dùng Uri trực tiếp, track imageLoaded state, thêm log
+
+**Patterns đã triển khai:**
+- ThumbnailData: check path.isNotEmpty() trước khi tạo
+- Audio: ParcelFileDescriptor.open() → setDataSource(pfd.fd)
+- APK: MediaStore query bằng tên file để resolve content:// → path
+- Logging trong FavoriteManager: resolveContentUri, resolveMimeType, toFavoriteItem
+
+
+### Task #015 — Sửa selection mode giữ mode khi uncheck hết
+**Ngày:** 2026-04-06
+**Mô tả:** Khi uncheck hết item trong selection mode → tự động thoát mode → bottom bar ẩn. Sửa: giữ selection mode khi uncheck, chỉ thoát khi user nhấn nút Thoát. Bottom bar ẩn khi selectedCount=0 nhưng mode vẫn bật.
+
+**Files đã sửa:**
+- `ui/selection/SelectionState.kt`: toggle() bỏ isSelectionMode=false, selectAll() bỏ isSelectionMode=false
+- `ui/favorites/FavoritesScreen.kt`: toggle() bỏ isSelectionMode=false, selectAll() bỏ isSelectionMode=false
+- `ui/trash/TrashScreen.kt`: toggle() bỏ isSelectionMode=false, selectAll() bỏ isSelectionMode=false
+- `ui/common/SelectableScaffold.kt`: BottomBar visible = selection.isSelectionMode && selection.selectedCount > 0
 
 
 ### Task #012 — Tạo UnusedAppsScreen (Samsung My Files style)

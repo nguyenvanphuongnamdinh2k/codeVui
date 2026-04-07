@@ -45,6 +45,7 @@ import com.example.codevui.model.FavoriteItem
 import com.example.codevui.model.FileType
 import com.example.codevui.ui.selection.SelectionCheckbox
 import com.example.codevui.ui.thumbnail.ThumbnailData
+import com.example.codevui.util.Logger
 import com.example.codevui.util.formatDateFull
 import com.example.codevui.util.formatFileSize
 
@@ -68,11 +69,7 @@ fun FavoritesScreen(
 
     fun toggle(path: String) {
         selectedPaths = if (path in selectedPaths) {
-            val newSet = selectedPaths - path
-            if (newSet.isEmpty()) {
-                isSelectionMode = false
-                emptySet()
-            } else newSet
+            selectedPaths - path  // Giữ selection mode — chỉ thoát khi user nhấn nút Thoát
         } else selectedPaths + path
     }
 
@@ -89,7 +86,6 @@ fun FavoritesScreen(
     fun selectAll() {
         if (selectedPaths.size == uiState.favorites.size) {
             selectedPaths = emptySet()
-            isSelectionMode = false
         } else {
             selectedPaths = uiState.favorites.map { it.path }.toSet()
         }
@@ -127,104 +123,111 @@ fun FavoritesScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color.White
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            // ── Header ──────────────────────────────────────────────
-            FavoritesHeader(
-                totalCount = uiState.favorites.size,
-                isSelectionMode = isSelectionMode,
-                selectedCount = selectedPaths.size,
-                onSelectAll = { selectAll() },
-                onCancel = { exitSelection() }
-            )
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                // ── Header ──────────────────────────────────────────────
+                FavoritesHeader(
+                    totalCount = uiState.favorites.size,
+                    isSelectionMode = isSelectionMode,
+                    selectedCount = selectedPaths.size,
+                    onSelectAll = { selectAll() },
+                    onCancel = { exitSelection() }
+                )
 
-            // ── Content ──────────────────────────────────────────
-            if (uiState.isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(strokeWidth = 2.dp)
-                }
-            } else if (uiState.favorites.isEmpty()) {
-                // Empty state
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Outlined.Star,
-                            contentDescription = null,
-                            tint = Color(0xFFDDDDDD),
-                            modifier = Modifier.size(72.dp)
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            "Chưa có mục yêu thích",
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF666666)
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Nhấn giữ để thêm file vào yêu thích",
-                            fontSize = 13.sp,
-                            color = Color(0xFFAAAAAA)
-                        )
+                // ── Content ──────────────────────────────────────────
+                if (uiState.isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(strokeWidth = 2.dp)
                     }
-                }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    itemsIndexed(
-                        items = uiState.favorites,
-                        key = { _, item -> item.fileId }
-                    ) { index, item ->
-                        FavoriteListItem(
-                            item = item,
-                            isSelectionMode = isSelectionMode,
-                            isSelected = item.path in selectedPaths,
-                            showDivider = index < uiState.favorites.lastIndex,
-                            onClick = {
-                                if (isSelectionMode) {
-                                    toggle(item.path)
-                                } else {
-                                    onItemClick(item)
-                                }
-                            },
-                            onLongClick = {
-                                if (!isSelectionMode) {
-                                    enterSelectionMode(item.path)
-                                }
-                            }
-                        )
+                } else if (uiState.favorites.isEmpty()) {
+                    // Empty state
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Outlined.Star,
+                                contentDescription = null,
+                                tint = Color(0xFFDDDDDD),
+                                modifier = Modifier.size(72.dp)
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "Chưa có mục yêu thích",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF666666)
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Nhấn giữ để thêm file vào yêu thích",
+                                fontSize = 13.sp,
+                                color = Color(0xFFAAAAAA)
+                            )
+                        }
                     }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        itemsIndexed(
+                            items = uiState.favorites,
+                            key = { _, item -> item.fileId }
+                        ) { index, item ->
+                            FavoriteListItem(
+                                item = item,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = item.path in selectedPaths,
+                                showDivider = index < uiState.favorites.lastIndex,
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        toggle(item.path)
+                                    } else {
+                                        onItemClick(item)
+                                    }
+                                },
+                                onLongClick = {
+                                    if (!isSelectionMode) {
+                                        enterSelectionMode(item.path)
+                                    }
+                                }
+                            )
+                        }
 
-                    item { Spacer(Modifier.height(80.dp)) }
+                        // Spacer cho bottom bar
+                        item {
+                            Spacer(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(if (isSelectionMode && selectedPaths.isNotEmpty()) 72.dp else 0.dp)
+                            )
+                        }
+                    }
                 }
             }
-        }
 
-        // ── Bottom action bar ─────────────────────────────────────
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.BottomCenter
-        ) {
+            // ── Bottom action bar — trong Box để đè lên content, không che list ──
             AnimatedVisibility(
                 visible = isSelectionMode && selectedPaths.isNotEmpty(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(),
                 enter = expandVertically(),
                 exit = shrinkVertically()
             ) {
-            FavoritesBottomBar(
-                selectedCount = selectedPaths.size,
-                onDelete = {
-                    viewModel.deleteFavorite(selectedPaths.toList())
-                    exitSelection()
-                }
-            )
+                FavoritesBottomBar(
+                    selectedCount = selectedPaths.size,
+                    onDelete = {
+                        viewModel.deleteFavorite(selectedPaths.toList())
+                        exitSelection()
+                    }
+                )
             }
         }
     }
@@ -420,31 +423,45 @@ private fun FavoriteThumbnail(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val log = Logger("FavoriteThumbnail")
+
+    // Track image loading state — chỉ hiện background/icon khi chưa load xong
+    var imageLoaded by remember { mutableStateOf(false) }
+
+    log.d("FavoriteThumbnail: name=${item.name}, mimeType=${item.mimeType}, uri=${item.uri}, isDir=${item.isDirectory}, fileType=$fileType")
 
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFFF5F5F5)),
+            .then(
+                // Chỉ có background khi chưa load xong ảnh
+                if (!imageLoaded) Modifier.background(Color(0xFFF5F5F5))
+                else Modifier
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (!item.isDirectory && item.uri != android.net.Uri.EMPTY) {
+            // Chỉ tạo ThumbnailData khi có đủ thông tin (path cần cho legacy fallback)
             val thumbnailData: ThumbnailData? = when (fileType) {
-                FileType.IMAGE, FileType.VIDEO -> ThumbnailData.Video(
+                FileType.IMAGE -> null // IMAGE dùng Uri trực tiếp, không cần custom fetcher
+                FileType.VIDEO -> if (item.path.isNotEmpty()) ThumbnailData.Video(
                     uri = item.uri,
                     path = item.path
-                )
+                ) else null
                 FileType.AUDIO -> ThumbnailData.Audio(
                     uri = item.uri,
                     path = item.path
                 )
-                FileType.APK -> ThumbnailData.Apk(
+                FileType.APK -> if (item.path.isNotEmpty()) ThumbnailData.Apk(
                     uri = item.uri,
                     path = item.path
-                )
+                ) else null
                 else -> null
             }
+            log.d("FavoriteThumbnail: thumbnailData=$thumbnailData")
 
             if (thumbnailData != null) {
+                // Video, Audio, APK → dùng custom fetcher
                 val imageRequest = ImageRequest.Builder(context)
                     .data(thumbnailData)
                     .crossfade(true)
@@ -465,6 +482,7 @@ private fun FavoriteThumbnail(
                         )
                     },
                     error = {
+                        log.w("FavoriteThumbnail ERROR: name=${item.name}, fileType=$fileType, thumbnailData=$thumbnailData")
                         Icon(
                             getFavoriteIcon(fileType, item.isDirectory),
                             contentDescription = null,
@@ -473,10 +491,47 @@ private fun FavoriteThumbnail(
                         )
                     },
                     success = {
+                        log.d("FavoriteThumbnail SUCCESS: name=${item.name}")
+                        imageLoaded = true
+                        SubcomposeAsyncImageContent(modifier = Modifier.fillMaxSize())
+                    }
+                )
+            } else if (fileType == FileType.IMAGE && item.uri != android.net.Uri.EMPTY) {
+                // IMAGE → load trực tiếp từ Uri bằng SubcomposeAsyncImage
+                SubcomposeAsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(item.uri)
+                        .crossfade(true)
+                        .build(),
+                    imageLoader = AppImageLoader.get(context),
+                    contentDescription = item.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    loading = {
+                        Icon(
+                            getFavoriteIcon(fileType, item.isDirectory),
+                            contentDescription = null,
+                            tint = Color(0xFF888888),
+                            modifier = Modifier.size(26.dp)
+                        )
+                    },
+                    error = {
+                        log.w("FavoriteThumbnail IMAGE ERROR: name=${item.name}, uri=${item.uri}")
+                        Icon(
+                            getFavoriteIcon(fileType, item.isDirectory),
+                            contentDescription = null,
+                            tint = Color(0xFF888888),
+                            modifier = Modifier.size(26.dp)
+                        )
+                    },
+                    success = {
+                        log.d("FavoriteThumbnail IMAGE SUCCESS: name=${item.name}")
+                        imageLoaded = true
                         SubcomposeAsyncImageContent(modifier = Modifier.fillMaxSize())
                     }
                 )
             } else {
+                log.w("FavoriteThumbnail: no thumbnail branch — fileType=$fileType, uri=${item.uri}")
                 Icon(
                     getFavoriteIcon(fileType, item.isDirectory),
                     contentDescription = null,
@@ -485,6 +540,7 @@ private fun FavoriteThumbnail(
                 )
             }
         } else {
+            log.w("FavoriteThumbnail: isDir=${item.isDirectory}, uri=${item.uri} — showing icon fallback")
             Icon(
                 getFavoriteIcon(fileType, item.isDirectory),
                 contentDescription = null,
