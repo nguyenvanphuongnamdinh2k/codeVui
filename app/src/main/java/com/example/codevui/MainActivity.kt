@@ -309,7 +309,15 @@ fun MyFilesApp(
                             "File đã nén" -> mainViewModel.navigateTo(Screen.FileList(FileType.ARCHIVE, "File đã nén"))
                             "Các file cài đặt" -> mainViewModel.navigateTo(Screen.FileList(FileType.APK, "Các file cài đặt"))
                             "Lượt tải về" -> mainViewModel.navigateTo(Screen.FileList(FileType.DOWNLOAD, "Lượt tải về"))
+                            "Thùng rác" -> mainViewModel.navigateTo(Screen.Trash)
                             else -> mainViewModel.navigateTo(Screen.Browse())
+                        }
+                    },
+                    onVolumeSelect = { domainType ->
+                        // Navigate to browse with volume root path
+                        val rootPath = com.example.codevui.data.StorageVolumeManager.getRootPath(domainType)
+                        if (rootPath != null) {
+                            mainViewModel.navigateTo(Screen.Browse(initialPath = rootPath))
                         }
                     }
                 )

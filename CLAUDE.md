@@ -1,7 +1,16 @@
 # CodeVui — CLAUDE.md
 
 > Project documentation cho AI assistant. Đọc file này TRƯỚC TIÊN trước khi bắt đầu bất kỳ task nào.
-> Last updated: 2026-04-06.
+> Last updated: 2026-04-08.
+>
+> **Companion files:**
+> - `.claude/CLAUDE.local.md` — ghi chú dev local (không commit)
+> - `.claude/memory.md` — long-term learning/context giữa sessions
+> - `.claude/TASKS.md` — lịch sử task + TODO
+> - `.claude/rules/` — convention rules (workflow, kotlin-style, compose-style, mvvm)
+> - `.claude/agents/` — agent personas (code-reviewer, build-verifier, myfiles-reference, refactor-assistant)
+> - `.claude/skills/` — step-by-step playbooks (add-screen, add-dialog, add-file-operation, add-thumbnail-fetcher, logging, mediastore, auto-build, task-tracking, updating-claude)
+> - **Reference project:** `../MyFiles/MyFiles/` — Samsung My Files source để port pattern sang CodeVui
 
 ---
 
@@ -52,10 +61,17 @@ com.example.codevui/
 │   ├── MediaStoreObserver.kt      # ContentObserver → Flow (auto-reload)
 │   ├── RecommendRepository.kt     # Recommend cards (MyFiles style) — Strategy pattern
 │   ├── FavoriteManager.kt         # Yêu thích — Room DB CRUD + MIME/path resolution
+│   ├── FavoriteAction.kt          # Data class chứa onAddToFavorites/onRemoveFromFavorites callbacks
+│   ├── StorageVolumeManager.kt    # Quản lý nhiều ổ lưu trữ (Internal/SD/USB) — MyFiles pattern
+│   ├── DomainType.kt              # Constants cho storage domain (INTERNAL=1, SD=2, USB=3-8)
+│   ├── StorageUsageManager.kt     # Lấy used/total/free size của từng volume
+│   ├── StorageTypeForTrash.kt     # Trash type theo storage domain (Internal/SD)
 │   └── db/
-│       ├── AppDatabase.kt         # Room singleton, v1→v2 migration
-│       ├── TrashDao.kt            # Room DAO
-│       └── TrashEntity.kt         # Room entity (trash_items table)
+│       ├── AppDatabase.kt         # Room singleton, v1→v2→v3 migration
+│       ├── TrashDao.kt            # Room DAO cho bảng trash_items
+│       ├── TrashEntity.kt         # Room entity (trash_items table)
+│       ├── FavoriteDao.kt         # Room DAO cho bảng favorites
+│       └── FavoriteEntity.kt      # Room entity (favorites table)
 │
 ├── service/
 │   └── FileOperationService.kt   # ForegroundService copy/move/compress
@@ -157,9 +173,9 @@ com.example.codevui/
 │   │   └── TrashViewModel.kt     # observeTrashItems (Room Flow)
 │   │
 │   ├── storage/
-│   │   ├── StorageManagerScreen.kt  # Quản lý lưu trữ (Samsung My Files style)
-│   │   ├── StorageManagerViewModel.kt
-│   │   └── StorageManagerUiState.kt
+│   │   ├── StorageManagerScreen.kt  # Quản lý lưu trữ (Samsung My Files style) — multi-volume
+│   │   ├── StorageManagerViewModel.kt  # Load volumes (Internal/SD/USB), per-volume analysis
+│   │   └── StorageManagerUiState.kt  # VolumeStorageState, VolumeFileBreakdown, multi-volume
 │   │
 │   ├── texteditor/
 │   │   ├── TextEditorScreen.kt   # TextField + pinch-zoom-pan-fling
@@ -201,9 +217,11 @@ com.example.codevui/
 │   ├── Logger.kt                # Structured logging (class/method/line)
 │   └── FormatUtils.kt           # formatFileSize, formatStorageSize, formatDateFull
 │
-└── progress/
-    └── OperationProgressDialog.kt  # Samsung-style progress dialog
 ```
+
+**Note:** `OperationProgressDialog` hiện tồn tại ở 2 nơi:
+- `ui/progress/OperationProgressDialog.kt` — Samsung My Files style dialog dùng chung cho copy/move/compress
+- `ui/archive/OperationProgressDialog.kt` — dialog riêng cho extract trong ArchiveScreen
 
 ---
 
@@ -277,6 +295,45 @@ data class StorageInfo(val totalBytes, usedBytes: Long) {
     val freeBytes: Long get() = totalBytes - usedBytes
 }
 
+data class StorageVolume(  // Thông tin 1 ổ lưu trữ (Internal/SD/USB)
+    val domainType: Int,    // DomainType constant
+    val path: String,       // Root path
+    val displayName: String,
+    val isRemovable: Boolean,
+    val isEmulated: Boolean,
+    val isMounted: Boolean,
+    val totalBytes: Long,
+    val freeBytes: Long
+) {
+    val usedBytes: Long get() = (totalBytes - freeBytes).coerceAtLeast(0L)
+    val usedPercent: Int get() = ...
+}
+
+data class VolumeStorageState(  // Per-volume state cho StorageManager
+    val domainType: Int,
+    val displayName: String,
+    val totalBytes, usedBytes, freeBytes: Long,
+    val usedPercent: Int,
+    val isLoading: Boolean = false,
+    val error: String? = null
+)
+
+data class VolumeFileBreakdown(  // Per-volume file category breakdown
+    val domainType: Int = 0,
+    val videoBytes, imageBytes, audioBytes, archiveBytes, apkBytes, docBytes: Long,
+    val downloadBytes, trashBytes: Long,
+    val otherBytes, systemBytes: Long = 0L
+)
+
+data class StorageUsageInfo(
+    val usedByteSize: Long = 0L,
+    val totalByteSize: Long = 0L,
+    val displayText: String? = null
+) {
+    val freeByteSize: Long get() = (totalByteSize - usedByteSize).coerceAtLeast(0L)
+    val usedPercent: Int get() = ...
+}
+
 enum class FileType {
     IMAGE, VIDEO, AUDIO, DOC, APK, ARCHIVE, DOWNLOAD, OTHER
 }
@@ -302,6 +359,7 @@ MediaStore query layer. **Không dùng singleton** — instantiate với Context
 | `getStorageAnalysis()` | Chi tiết dung lượng (suspend) — video/image/audio/archive/apk/doc/apps/duplicates/large/trash |
 | `findLargeFiles(minBytes)` | Files > minBytes từ MediaStore, sorted SIZE DESC, exclude .Trash |
 | `getUnusedApps()` | Apps không dùng 30 ngày (UsageStatsManager), user apps only, sorted SIZE DESC |
+| `getVolumeFileBreakdown(path)` | File breakdown cho SD/USB (video/image/audio/archive/apk/doc/download/trash) |
 
 - LruCache(100) cho app labels (PackageManager)
 - `essentialFolderNames`: DCIM, Pictures, Download, Documents, Android, Alarms, Music, Movies, Podcasts, Ringtones, Notifications, Audiobooks
@@ -416,6 +474,72 @@ Strategy pattern cho recommendation cards (MyFiles style). Instantiate với Con
 - `UNNECESSARY_FILES` — APK + file nén (.zip, .rar, .7z, .tar, .gz)
 - `SCREENSHOT_FILES` — file trong thư mục Screenshots
 - `DOWNLOAD_FILES` — file trong thư mục Downloads
+
+### `StorageVolumeManager.kt`
+Singleton quản lý nhiều ổ lưu trữ (Internal/SD/USB). Mirror từ MyFiles.
+
+| API | Mô tả |
+|---|---|
+| `refresh(context)` | Load danh sách ổ từ StorageManager + legacy scan |
+| `getMountedVolumes(context)` | Lấy tất cả ổ đang mounted |
+| `getInternalStorage(context)` | Lấy Internal Storage |
+| `getSdCard(context)` | Lấy SD Card (nếu có) |
+| `getUsbDrives(context)` | Lấy danh sách USB drives |
+| `mounted(domainType)` | Kiểm tra ổ có đang mounted không |
+| `connected(domainType)` | Kiểm tra ổ có đang connected không |
+| `getVolume(domainType)` | Lấy StorageVolume theo domainType |
+| `getRootPath(domainType)` | Lấy root path của ổ |
+
+**DomainType constants:**
+```kotlin
+const val UNKNOWN = 0
+const val INTERNAL_STORAGE = 1
+const val EXTERNAL_SD = 2
+const val EXTERNAL_USB_DRIVE_A = 3  // ... F = 8
+const val INTERNAL_APP_CLONE = 9
+```
+
+### `DomainType.kt`
+Object chứa constants và helper functions cho storage domain.
+
+```kotlin
+DomainType.isLocalStorage(domainType)  // domainType in INTERNAL..INTERNAL_APP_CLONE
+DomainType.isInternalStorage(domainType)  // INTERNAL or APP_CLONE
+DomainType.isSd(domainType)  // EXTERNAL_SD
+DomainType.isUsb(domainType)  // EXTERNAL_USB_DRIVE_*
+DomainType.isRemovable(domainType)  // SD or USB
+DomainType.mounted(domainType)  // delegate to StorageVolumeManager
+DomainType.connected(domainType)
+DomainType.getVolume(domainType): StorageVolume?
+DomainType.getRootPath(domainType): String?
+```
+
+### `StorageUsageManager.kt`
+Singleton lấy used/total/free size của từng volume.
+
+```kotlin
+StorageUsageManager.getStorageUsedSize(context, domainType): Long
+StorageUsageManager.getStorageTotalSize(domainType): Long
+StorageUsageManager.getStorageFreeSpace(domainType): Long
+StorageUsageManager.getStorageUsageInfo(context, domainType): StorageUsageInfo
+StorageUsageManager.getStorageVolumeInfo(context, domainType): StorageVolume?
+```
+
+### `StorageTypeForTrash.kt`
+Xác định trash type dựa trên storage domain. Mirror từ MyFiles.
+
+```kotlin
+StorageTypeForTrash.NONE = 0
+StorageTypeForTrash.INTERNAL = 1       // Thùng rác Internal
+StorageTypeForTrash.EXTERNAL_SD = 2    // Thùng rác SD Card
+StorageTypeForTrash.INTERNAL_AND_SD = 3
+
+StorageTypeForTrash.getStorageTypeForTrash(domainType): Int
+StorageTypeForTrash.isInternalTrash(storageTypeForTrash): Boolean
+StorageTypeForTrash.isSDTrash(storageTypeForTrash): Boolean
+StorageTypeForTrash.isInternalAndSDTrash(storageTypeForTrash): Boolean
+StorageTypeForTrash.isFullOnlySdOrInternal(selected, noSpace): Boolean
+```
 
 ---
 
@@ -704,6 +828,33 @@ Thay TopAppBar khi selection mode. "Tất cả" checkbox | "Đã chọn N" | Tho
 4 nút chính: Di chuyển | Sao chép | Chia sẻ | Xóa
 + "N.hơn" dropdown: Copy vào bộ nhớ tạm, Chi tiết, Đổi tên, Nén, Giải nén, Yêu thích, Màn hình chờ.
 
+**Menu visibility (MyFiles pattern — menu chỉ hiện khi hành vi hợp lệ):**
+
+| Menu | Điều kiện hiện |
+|---|---|
+| Nén | `onCompress != null` → chỉ khi **không có** archive files được chọn |
+| Giải nén | `onExtract != null` → chỉ khi **có** archive files được chọn |
+| Thêm vào yêu thích | `onAddToFavorites != null` → chỉ khi **chưa favorite đủ** |
+| Xóa khỏi yêu thích | `onRemoveFromFavorites != null` → chỉ khi **có** item đã favorite |
+
+**`SelectionActions` data class:**
+```kotlin
+data class SelectionActions(
+    val onMove: () -> Unit = {},
+    val onCopy: () -> Unit = {},
+    val onDelete: () -> Unit = {},
+    val onShare: () -> Unit = {},
+    val onCopyToClipboard: () -> Unit = {},
+    val onDetails: () -> Unit = {},
+    val onRename: () -> Unit = {},
+    val onCompress: (() -> Unit)? = null,              // null = ẩn
+    val onExtract: (() -> Unit)? = null,               // null = ẩn
+    val onAddToFavorites: (() -> Unit)? = null,       // null = ẩn
+    val onRemoveFromFavorites: (() -> Unit)? = null,  // null = ẩn
+    val onAddToHomeScreen: () -> Unit = {}
+)
+```
+
 ### `SelectionCheckbox`
 Circular checkbox (Samsung style). 28dp, blue fill when selected.
 
@@ -749,6 +900,12 @@ Samsung My Files style.
 | `toggle(id)` | Bỏ check → xóa khỏi selectedIds, **giữ mode** |
 | `selectAll(ids)` | Bỏ check all → empty set, **giữ mode** |
 | `exit()` | Thoát mode — CHỈ gọi khi nhấn nút Thoát |
+
+**Menu visibility logic (MyFiles `ContextualMenuUpdateOperator` pattern):**
+- `Nén`: chỉ hiện khi **không có** archive files (`zip/rar/7z/tar/gz`)
+- `Giải nén`: chỉ hiện khi **có** archive files được chọn
+- `Thêm vào yêu thích`: chỉ hiện khi **ít nhất 1 item chưa favorite** (`favoriteCount < selectedCount`)
+- `Xóa khỏi yêu thích`: chỉ hiện khi **có item đã favorite** (`favoriteCount > 0`)
 
 **Bottom bar:** `visible = isSelectionMode && selectedCount > 0`
 - Khi selectedCount=0 → bottom bar ẩn, nhưng mode vẫn bật
@@ -897,3 +1054,36 @@ formatDateFull(epochSeconds: Long): String  // "01/03/2024"
 - **Skills ghi rõ tên** — không ghi chung chung "không có skill"
 - **Cấu trúc update** — ghi rõ file nào thay đổi, thêm hoặc bớt gì
 - **Build result bắt buộc** — luôn ghi rõ thành công hay thất bại
+
+---
+
+## 18. MyFiles Reference — Pattern Mapping
+
+**Source:** `../MyFiles/MyFiles/app/src/main/java/com/sec/android/app/myfiles/` (Samsung My Files — Kotlin + View system, không dùng Compose)
+
+Dùng MyFiles làm reference khi port pattern sang CodeVui. Bảng mapping chính:
+
+| MyFiles (Samsung) | CodeVui (Compose) | Ghi chú |
+|---|---|---|
+| `presenter/managers/EnvManager.kt` | `data/StorageVolumeManager.kt` | Port multi-volume logic (Internal/SD/USB) |
+| `presenter/managers/ExternalStorageSupporter.kt` | `data/DomainType.kt` + `StorageUsageManager.kt` | Port domain type constants + usage APIs |
+| `ui/dialog/DialogManager.kt` | `ui/common/dialogs/DialogManager.kt` | CodeVui: central sealed class state machine thay cho builder pattern |
+| `ui/menu/MenuManager.kt` + `MenuManagerInterface.kt` | `ui/selection/SelectionComponents.kt` (`SelectionActions` nullable callbacks) | Port ContextualMenuUpdateOperator rules: hide menu khi invalid |
+| `ui/menu/operator/OperationEventManager.kt` | `ui/selection/SelectionActionHandler.kt` | Dispatcher cho actions |
+| `ui/manager/AppBarManager.kt` | `ui/selection/SelectionComponents.kt` (`SelectionTopBar`) | Selection top bar |
+| `ui/manager/BottomViewManager.kt` | `ui/selection/SelectionComponents.kt` (`SelectionBottomBar`) | Selection bottom bar |
+| `ui/manager/ColumnViewManager.kt` | `ui/browse/columnview/*` | Miller columns — CodeVui dùng LazyRow of ColumnPanel |
+| `ui/pages/filelist/` | `ui/filelist/` + `ui/browse/` | Pages → Screens |
+| `ui/pages/home/` | `ui/home/` | HomeScreen |
+| `ui/pages/managestorage/` | `ui/storage/StorageManagerScreen.kt` | Quản lý lưu trữ |
+| `presenter/feature/Sep*` | *(không dùng)* | Samsung-only features, bỏ qua |
+| `sec/android/app/myfiles/...` package root | `com.example.codevui` | App package |
+
+**Quy tắc port từ MyFiles sang CodeVui:**
+1. **Không port View/XML** — CodeVui dùng Compose, tái viết UI theo Material 3
+2. **Giữ business logic** — copy over file operations, trash, duplicate detection, domain type
+3. **Convert Java-style callback → Kotlin Flow/StateFlow** — MyFiles nhiều chỗ còn dùng callback, CodeVui phải refactor
+4. **Skip Samsung proprietary** — tất cả `SemFloatingFeatureWrapper`, `KnoxManager`, `AfwManager`, `DesktopManager` không liên quan
+5. **Tên class Việt hoá dễ đọc** — CodeVui ưu tiên naming dễ hiểu bằng tiếng Việt trong comment
+
+Khi không rõ pattern nào đó MyFiles làm ra sao, đọc trực tiếp file tương ứng (dùng agent `myfiles-reference`) rồi port sang CodeVui convention.

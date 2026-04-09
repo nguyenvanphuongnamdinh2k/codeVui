@@ -8,7 +8,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.painterResource
+import com.example.codevui.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -39,6 +42,7 @@ fun ColumnPanel(
     selection: SelectionState,
     columnWidth: Dp = 300.dp,
     isActiveColumn: Boolean = false,  // Chỉ column cuối cùng = true
+    favoritePaths: Set<String> = emptySet(),
     onFolderClick: (FolderItem) -> Unit = {},
     onFileClick: (RecentFile) -> Unit = {},
     modifier: Modifier = Modifier
@@ -66,6 +70,7 @@ fun ColumnPanel(
                     isNavigated = isNavigated,
                     isSelectionMode = isSelectionModeHere,
                     isSelected = selection.isSelected(id),
+                    isFavorite = favoritePaths.contains(folder.path),
                     showDivider = index < column.folders.lastIndex || column.files.isNotEmpty(),
                     onClick = {
                         // Chỉ cho phép toggle selection nếu đây là active column
@@ -78,8 +83,9 @@ fun ColumnPanel(
                     },
                     onLongClick = {
                         // Chỉ cho phép enter selection mode nếu đây là active column
+                        // Truyền column.path làm contextKey để khoá scope vào cột này
                         if (!selection.isSelectionMode && isActiveColumn) {
-                            selection.enterSelectionMode(id)
+                            selection.enterSelectionMode(id, contextKey = column.path)
                         }
                         // Nếu không phải active column → ignore long click
                     },
@@ -99,6 +105,7 @@ fun ColumnPanel(
                     file = file,
                     isSelectionMode = isSelectionModeHere,
                     isSelected = selection.isSelected(id),
+                    isFavorite = favoritePaths.contains(file.path),
                     showDivider = index < column.files.lastIndex,
                     onClick = {
                         // Chỉ cho phép toggle selection nếu đây là active column
@@ -111,8 +118,9 @@ fun ColumnPanel(
                     },
                     onLongClick = {
                         // Chỉ cho phép enter selection mode nếu đây là active column
+                        // Truyền column.path làm contextKey để khoá scope vào cột này
                         if (!selection.isSelectionMode && isActiveColumn) {
-                            selection.enterSelectionMode(id)
+                            selection.enterSelectionMode(id, contextKey = column.path)
                         }
                         // Nếu không phải active column → ignore long click
                     },
@@ -146,6 +154,7 @@ private fun ColumnFolderRow(
     isNavigated: Boolean,
     isSelectionMode: Boolean,
     isSelected: Boolean,
+    isFavorite: Boolean,
     showDivider: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -186,6 +195,15 @@ private fun ColumnFolderRow(
                 Text(formatDateFull(folder.dateModified), fontSize = 10.sp, color = Color(0xFF999999))
             }
             Text("${folder.itemCount} mục", fontSize = 11.sp, color = Color(0xFF999999))
+            if (isFavorite) {
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    painter = painterResource(id = R.drawable.favorite_icon),
+                    contentDescription = "Yêu thích",
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
         if (showDivider) {
             HorizontalDivider(
@@ -206,6 +224,7 @@ private fun ColumnFileRow(
     file: RecentFile,
     isSelectionMode: Boolean,
     isSelected: Boolean,
+    isFavorite: Boolean,
     showDivider: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -237,6 +256,15 @@ private fun ColumnFileRow(
                 Text(formatDateFull(file.dateModified), fontSize = 10.sp, color = Color(0xFF999999))
             }
             Text(formatFileSize(file.size), fontSize = 11.sp, color = Color(0xFF999999))
+            if (isFavorite) {
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    painter = painterResource(id = R.drawable.favorite_icon),
+                    contentDescription = "Yêu thích",
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
         if (showDivider) {
             HorizontalDivider(

@@ -6,7 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.painterResource
+import com.example.codevui.R
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +35,7 @@ fun FolderListItem(
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
     isLandscape: Boolean = false,
+    isFavorite: Boolean = false,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
     onToggleSelect: () -> Unit = {}
@@ -99,6 +103,17 @@ fun FolderListItem(
                 fontSize = metaFontSize,
                 color = Color(0xFF999999)
             )
+
+            // Favorite star (giống MyFiles — hiện cả ở selection mode)
+            if (isFavorite) {
+                Spacer(Modifier.width(if (isLandscape) 8.dp else 12.dp))
+                Icon(
+                    painter = painterResource(id = R.drawable.favorite_icon),
+                    contentDescription = "Yêu thích",
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(if (isLandscape) 16.dp else 18.dp)
+                )
+            }
         }
         if (showDivider) {
             val dividerStart = when {

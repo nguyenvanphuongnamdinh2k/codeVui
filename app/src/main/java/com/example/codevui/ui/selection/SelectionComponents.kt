@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -84,6 +85,12 @@ fun SelectionTopBar(
 /**
  * SelectionBottomBar — bottom action bar khi có items được chọn
  * Hiển thị: Di chuyển | Sao chép | Chia sẻ | Xóa | N.hơn (popup menu)
+ *
+ * Menu visibility theo MyFiles pattern:
+ * - Nén: null = ẩn (khi có archive files được chọn)
+ * - Giải nén: null = ẩn (khi không có archive)
+ * - Thêm vào yêu thích: null = ẩn (khi tất cả đã favorite)
+ * - Xóa khỏi yêu thích: null = ẩn (khi không có favorite)
  */
 @Composable
 fun SelectionBottomBar(
@@ -96,9 +103,10 @@ fun SelectionBottomBar(
     onCopyToFileClipboard: () -> Unit = {},  // Copy files to clipboard (new)
     onDetails: () -> Unit = {},
     onRename: () -> Unit = {},
-    onCompress: (() -> Unit)? = {},  // Null = không hiển thị menu Nén
-    onExtract: (() -> Unit)? = null,  // Null = không hiển thị menu Giải nén
-    onAddToFavorites: () -> Unit = {},
+    onCompress: (() -> Unit)? = null,   // null = ẩn (khi có archive files)
+    onExtract: (() -> Unit)? = null,    // null = ẩn (khi không có archive)
+    onAddToFavorites: (() -> Unit)? = null,  // null = ẩn (khi đã favorite hết)
+    onRemoveFromFavorites: (() -> Unit)? = null,  // null = ẩn (khi không có favorite)
     onAddToHomeScreen: () -> Unit = {}
 ) {
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -153,41 +161,55 @@ fun SelectionBottomBar(
                             onRename()
                         }
                     )
-                    // Nén (chỉ hiển thị khi onCompress != null, tức là không có file archive được chọn)
-                    if (onCompress != null) {
+                    // Nén — chỉ hiển thị khi onCompress != null (MyFiles pattern)
+                    onCompress?.let {
                         MoreMenuItem(
                             icon = Icons.Outlined.FolderZip,
                             text = "Nén",
                             onClick = {
                                 showMoreMenu = false
-                                onCompress()
+                                it()
                             }
                         )
                     }
-                    // Giải nén (chỉ hiển thị khi onExtract != null, tức là có file zip được chọn)
-                    if (onExtract != null) {
+                    // Giải nén — chỉ hiển thị khi onExtract != null (MyFiles pattern)
+                    onExtract?.let {
                         MoreMenuItem(
                             icon = Icons.Outlined.FolderOpen,
                             text = "Giải nén",
                             onClick = {
                                 showMoreMenu = false
-                                onExtract()
+                                it()
                             }
                         )
                     }
-                    MoreMenuItem(
-                        icon = Icons.Outlined.FavoriteBorder,
-                        text = "Thêm vào mục yêu thích",
-                        onClick = {
-                            showMoreMenu = false
-                            onAddToFavorites()
-                        }
-                    )
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 16.dp),
                         thickness = 0.5.dp,
                         color = Color(0xFFE0E0E0)
                     )
+                    // Thêm vào yêu thích — chỉ hiển thị khi onAddToFavorites != null (MyFiles pattern)
+                    onAddToFavorites?.let {
+                        MoreMenuItem(
+                            icon = Icons.Outlined.FavoriteBorder,
+                            text = "Thêm vào mục yêu thích",
+                            onClick = {
+                                showMoreMenu = false
+                                it()
+                            }
+                        )
+                    }
+                    // Xóa khỏi yêu thích — chỉ hiển thị khi onRemoveFromFavorites != null (MyFiles pattern)
+                    onRemoveFromFavorites?.let {
+                        MoreMenuItem(
+                            icon = Icons.Filled.Favorite,
+                            text = "Xóa khỏi yêu thích",
+                            onClick = {
+                                showMoreMenu = false
+                                it()
+                            }
+                        )
+                    }
                     MoreMenuItem(
                         icon = Icons.Outlined.Home,
                         text = "Thêm vào Màn hình chờ",

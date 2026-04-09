@@ -1,9 +1,12 @@
 package com.example.codevui.ui.storage
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -15,6 +18,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.SdStorage
+import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.codevui.data.DomainType
 import com.example.codevui.util.formatStorageSize
 import com.example.codevui.model.RecommendCard
 import com.example.codevui.model.RecommendType
@@ -66,10 +72,13 @@ fun StorageManagerScreen(
     onNavigateToTrash: () -> Unit = {},
     onNavigateToOldScreenshots: () -> Unit = {},
     onNavigateToUnusedApps: () -> Unit = {},
-    onNavigateToRecommend: (RecommendType) -> Unit = {}
+    onNavigateToRecommend: (RecommendType) -> Unit = {},
+    onVolumeSelect: (Int) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var carouselPage by remember { mutableIntStateOf(0) }
+
+    Log.d("StorageScreen", "StorageManagerScreen recomposition: totalFormatted=${uiState.totalFormatted}, storageInfo.totalBytes=${uiState.storageInfo?.totalBytes}, volumes=${uiState.volumes.map { "${it.domainType}:${it.totalBytes}" }}")
 
     Scaffold(
         topBar = {
@@ -91,6 +100,13 @@ fun StorageManagerScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
+            // ── Volume Selector (Internal / SD / USB) ──────────────────
+            VolumeSelector(
+                volumes = uiState.volumes,
+                selectedDomainType = uiState.selectedVolumeDomainType,
+                onVolumeSelect = onVolumeSelect
+            )
+
             if (uiState.isLoading) {
                 Box(
                     modifier = Modifier
@@ -110,11 +126,21 @@ fun StorageManagerScreen(
                 )
             }
 
-            // ── Internal Storage Card ───────────────────────────────
-            InternalStorageCard(
-                uiState = uiState,
-                onCategoryClick = onNavigateToCategory
-            )
+            // ── Per-volume storage card ────────────────────────────────
+            if (uiState.selectedVolumeDomainType == DomainType.INTERNAL_STORAGE) {
+                // Internal: dùng full analysis đã load sẵn
+                InternalStorageCard(
+                    uiState = uiState,
+                    onCategoryClick = onNavigateToCategory
+                )
+            } else {
+                // SD/USB: dùng breakdown từ fileBreakdowns map
+                ExternalStorageCard(
+                    volumeState = uiState.volumes.find { it.domainType == uiState.selectedVolumeDomainType },
+                    breakdown = uiState.fileBreakdowns[uiState.selectedVolumeDomainType],
+                    onCategoryClick = onNavigateToCategory
+                )
+            }
 
             // ── Quick Actions Carousel ─────────────────────────────
             QuickActionsCarousel(
@@ -155,6 +181,214 @@ fun StorageManagerScreen(
 }
 
 // ─────────────────────────────────────────────────────────
+// Volume Selector (Internal / SD / USB tabs)
+// Mirror MyFiles: switch giữa các ổ lưu trữ
+// ─────────────────────────────────────────────────────────
+@Composable
+private fun VolumeSelector(
+    volumes: List<VolumeStorageState>,
+    selectedDomainType: Int,
+    onVolumeSelect: (Int) -> Unit
+) {
+    if (volumes.isEmpty()) return
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        volumes.forEach { volume ->
+            val isSelected = volume.domainType == selectedDomainType
+
+            val icon: ImageVector = when {
+                DomainType.isInternalStorage(volume.domainType) -> Icons.Filled.SdStorage
+                DomainType.isSd(volume.domainType) -> Icons.Filled.SdStorage
+                DomainType.isUsb(volume.domainType) -> Icons.Filled.Usb
+                else -> Icons.Filled.SdStorage
+            }
+
+            val label = volume.displayName
+
+            FilterChip(
+                selected = isSelected,
+                onClick = { onVolumeSelect(volume.domainType) },
+                label = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = if (isSelected) Color(0xFF2196F3) else Color(0xFF888888)
+                        )
+                        Text(
+                            text = label,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Color(0xFFE3F2FD),
+                    selectedLabelColor = Color(0xFF1976D2)
+                ),
+                border = if (isSelected) {
+                    FilterChipDefaults.filterChipBorder(
+                        borderColor = Color(0xFF2196F3),
+                        selectedBorderColor = Color(0xFF2196F3),
+                        enabled = true,
+                        selected = isSelected
+                    )
+                } else {
+                    FilterChipDefaults.filterChipBorder(
+                        borderColor = Color(0xFFE0E0E0),
+                        selectedBorderColor = Color.Transparent,
+                        enabled = true,
+                        selected = false
+                    )
+                }
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────
+// External Storage Card (SD / USB)
+// Simplified view cho external volumes
+// ─────────────────────────────────────────────────────────
+@Composable
+private fun ExternalStorageCard(
+    volumeState: VolumeStorageState?,
+    breakdown: com.example.codevui.data.VolumeFileBreakdown?,
+    onCategoryClick: (String) -> Unit
+) {
+    if (volumeState == null) {
+        // Volume not loaded yet
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5)),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(40.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(strokeWidth = 2.dp)
+            }
+        }
+        return
+    }
+
+    val usedPercent = volumeState.usedPercent
+    val usedFormatted = formatStorageSize(volumeState.usedBytes)
+    val totalFormatted = formatStorageSize(volumeState.totalBytes)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5)),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = volumeState.displayName,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF333333)
+                )
+                if (volumeState.isLoading) {
+                    CircularProgressIndicator(
+                        strokeWidth = 1.5.dp,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "$usedPercent% đã dùng",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF555555)
+                )
+                Text(
+                    text = "$usedFormatted / $totalFormatted",
+                    fontSize = 13.sp,
+                    color = Color(0xFF888888)
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // Simple progress bar
+            val progress by animateFloatAsState(
+                targetValue = usedPercent / 100f,
+                label = "storageProgress"
+            )
+
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = Color(0xFF2196F3),
+                trackColor = Color(0xFFE0E0E0),
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            // File breakdown list (if available)
+            if (breakdown != null) {
+                FileCategoryRow(Color(0xFFE91E63), "Video", breakdown.videoBytes, onCategoryClick)
+                FileCategoryRow(Color(0xFFFF8A80), "Ảnh", breakdown.imageBytes, onCategoryClick)
+                FileCategoryRow(Color(0xFFCE93D8), "Âm thanh", breakdown.audioBytes, onCategoryClick)
+                FileCategoryRow(Color(0xFF4CAF50), "File đã nén", breakdown.archiveBytes, onCategoryClick)
+                FileCategoryRow(Color(0xFFAED581), "Các file cài đặt", breakdown.apkBytes, onCategoryClick)
+                FileCategoryRow(Color(0xFF2196F3), "Tài liệu", breakdown.docBytes, onCategoryClick)
+                FileCategoryRow(Color(0xFF9E9E9E), "Thùng rác", breakdown.trashBytes) { onCategoryClick("Thùng rác") }
+            } else {
+                // Placeholder rows while loading
+                FileCategoryRow(Color(0xFFE91E63), "Video", 0L, onCategoryClick)
+                FileCategoryRow(Color(0xFFFF8A80), "Ảnh", 0L, onCategoryClick)
+                FileCategoryRow(Color(0xFF4CAF50), "File đã nén", 0L, onCategoryClick)
+            }
+
+            // Error message
+            volumeState.error?.let { err ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = err,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────
 // Internal Storage Card
 // ─────────────────────────────────────────────────────────
 @Composable
@@ -162,6 +396,7 @@ private fun InternalStorageCard(
     uiState: StorageManagerUiState,
     onCategoryClick: (String) -> Unit
 ) {
+    Log.d("StorageCard", "InternalStorageCard: totalFormatted=${uiState.totalFormatted}, storageInfo.totalBytes=${uiState.storageInfo?.totalBytes}, volumes[0].totalBytes=${uiState.volumes.firstOrNull()?.totalBytes}")
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -345,10 +580,15 @@ private fun FileCategoryRow(
     bytes: Long,
     onClick: (String) -> Unit
 ) {
+    // Disable click khi không có dữ liệu để tránh mở page trống
+    val isEmpty = bytes <= 0L
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick(label) }
+            .then(
+                if (isEmpty) Modifier
+                else Modifier.clickable { onClick(label) }
+            )
             .padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -356,25 +596,25 @@ private fun FileCategoryRow(
             modifier = Modifier
                 .size(8.dp)
                 .clip(RoundedCornerShape(4.dp))
-                .background(dotColor)
+                .background(if (isEmpty) Color(0xFFDDDDDD) else dotColor)
         )
         Spacer(Modifier.width(10.dp))
         Text(
             text = label,
             fontSize = 13.sp,
-            color = Color(0xFF444444),
+            color = if (isEmpty) Color(0xFFAAAAAA) else Color(0xFF444444),
             modifier = Modifier.weight(1f)
         )
         Text(
             text = formatStorageSize(bytes),
             fontSize = 13.sp,
-            color = Color(0xFF888888)
+            color = if (isEmpty) Color(0xFFBBBBBB) else Color(0xFF888888)
         )
         Spacer(Modifier.width(4.dp))
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
-            tint = Color(0xFFCCCCCC),
+            tint = if (isEmpty) Color(0xFFEEEEEE) else Color(0xFFCCCCCC),
             modifier = Modifier.size(16.dp)
         )
     }

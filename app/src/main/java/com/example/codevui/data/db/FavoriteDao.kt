@@ -16,6 +16,13 @@ interface FavoriteDao {
     fun getAllFavorites(): Flow<List<FavoriteEntity>>
 
     /**
+     * Observe chỉ danh sách path của favorites — nhẹ hơn getAllFavorites
+     * vì không cần load đầy đủ entity. Dùng cho UI overlay icon yêu thích.
+     */
+    @Query("SELECT path FROM favorites")
+    fun observeFavoritePaths(): Flow<List<String>>
+
+    /**
      * Lấy tất cả favorites (non-flow, dùng cho ViewModel không cần observe).
      */
     @Query("SELECT * FROM favorites ORDER BY sortOrder ASC")

@@ -21,26 +21,19 @@ fun ColumnBrowseView(
     selection: SelectionState,
     onFolderClick: (columnIndex: Int, folder: FolderItem) -> Unit,
     onFileClick: (RecentFile) -> Unit,
+    favoritePaths: Set<String> = emptySet(),
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val screenWidth = LocalConfiguration.current.screenWidthDp.dp
     val columnWidth = maxOf(280.dp, screenWidth * 0.38f)
 
-    // Tìm column nào đang có items được selected
-    // Trả về -1 nếu chưa select gì (cho phép tất cả columns long-press)
-    val activeSelectionColumnIndex = remember(columns, selection.selectedIds) {
-        if (selection.selectedIds.isEmpty()) {
-            -1  // Chưa select gì → cho phép tất cả columns
-        } else {
-            // Tìm column nào có item được selected
-            columns.indexOfFirst { column ->
-                val columnItemIds = column.folders.map { "folder:${it.path}" } +
-                                  column.files.map { "file:${it.path}" }
-                selection.selectedIds.any { it in columnItemIds }
-            }
-        }
-    }
+    // Active column = column có path khớp với SelectionState.activeContextKey.
+    // Nếu chưa có activeContextKey (chưa enter selection mode) → tất cả columns
+    // đều cho phép long-press để bắt đầu selection.
+    // Nếu activeContextKey đã set nhưng không match column nào (VD column đã bị
+    // navigate khỏi) → không column nào active để tránh thao tác nhầm.
+    val activeContextKey = selection.activeContextKey
 
     LaunchedEffect(columns.size) {
         if (columns.isNotEmpty()) {
@@ -59,11 +52,13 @@ fun ColumnBrowseView(
             key = { _, col -> col.path }
         ) { index, column ->
             Row {
+                val isActive = activeContextKey == null || activeContextKey == column.path
                 ColumnPanel(
                     column = column,
                     selection = selection,
                     columnWidth = columnWidth,
-                    isActiveColumn = activeSelectionColumnIndex == -1 || index == activeSelectionColumnIndex,  // -1 = cho phép tất cả, otherwise chỉ column có selected items
+                    isActiveColumn = isActive,
+                    favoritePaths = favoritePaths,
                     onFolderClick = { folder -> onFolderClick(index, folder) },
                     onFileClick = onFileClick
                 )

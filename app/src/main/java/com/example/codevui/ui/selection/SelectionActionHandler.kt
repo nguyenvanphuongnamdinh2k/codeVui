@@ -7,6 +7,7 @@ import android.content.Intent
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +71,21 @@ fun selectionActionHandler(
             File(it).extension.lowercase() in listOf("zip", "rar", "7z", "tar", "gz")
         }
     }
+
+    // ── Favorites visibility (MyFiles pattern) ──────────────────────────────────
+    // Observe toàn bộ favorites từ Room thành Flow<Set<String>> → lookup O(1)
+    // Đổi từ LaunchedEffect+async-loop sang Flow observer để realtime + tránh
+    // race condition giữa toggle favorite và hiển thị menu.
+    val allFavoritePaths by remember(context) {
+        FavoriteManager.observeFavoritePaths(context)
+    }.collectAsState(initial = emptySet())
+
+    val selectedCount = selectionState.selectedCount
+    val favoriteCount = remember(selectionState.selectedIds, allFavoritePaths) {
+        selectedPaths().count { it in allFavoritePaths }
+    }
+    val canAddToFavorites = selectedCount > 0 && favoriteCount < selectedCount
+    val canRemoveFromFavorites = favoriteCount > 0
 
     // Copy/Move destination picker
     if (fileActionState.showPicker && fileActionState.pendingOperation != null) {
@@ -231,7 +247,16 @@ fun selectionActionHandler(
         )
     }
 
-    val actions = remember(selectionState, fileActionState, fileClipboard, hasArchiveFiles, currentPath) {
+    val actions = remember(
+        selectionState,
+        fileActionState,
+        fileClipboard,
+        hasArchiveFiles,
+        canAddToFavorites,
+        canRemoveFromFavorites,
+        selectedCount,
+        currentPath
+    ) {
         SelectionActions(
             onMove = {
                 val paths = selectedPaths()
@@ -331,40 +356,60 @@ fun selectionActionHandler(
                         selectionState.exit()
                     }
                 }
-            } else null,
-            onAddToFavorites = {
-                scope.launch {
-                    val paths = selectedPaths()
-                    var success = 0
-                    for (path in paths) {
-                        val file = File(path)
-                        val mimeType = if (file.isFile) {
-                            android.webkit.MimeTypeMap.getSingleton()
-                                .getMimeTypeFromExtension(file.extension.lowercase())
-                                ?: when (file.extension.lowercase()) {
-                                    "apk" -> "application/vnd.android.package-archive"
-                                    else -> null
-                                }
-                        } else null
-                        val added = FavoriteManager.addFavorite(
-                            context = context,
-                            path = path,
-                            name = file.name,
-                            size = if (file.isFile) file.length() else 0L,
-                            mimeType = mimeType,
-                            isDirectory = file.isDirectory,
-                            dateModified = file.lastModified() / 1000
-                        )
-                        if (added) success++
+            } else null,  // null = ẩn Nén (vì có archive files được chọn)
+            onAddToFavorites = if (canAddToFavorites) {
+                {
+                    scope.launch {
+                        val paths = selectedPaths()
+                        var success = 0
+                        for (path in paths) {
+                            if (FavoriteManager.isFavorite(context, path)) continue
+                            val file = File(path)
+                            val mimeType = if (file.isFile) {
+                                android.webkit.MimeTypeMap.getSingleton()
+                                    .getMimeTypeFromExtension(file.extension.lowercase())
+                                    ?: when (file.extension.lowercase()) {
+                                        "apk" -> "application/vnd.android.package-archive"
+                                        else -> null
+                                    }
+                            } else null
+                            val added = FavoriteManager.addFavorite(
+                                context = context,
+                                path = path,
+                                name = file.name,
+                                size = if (file.isFile) file.length() else 0L,
+                                mimeType = mimeType,
+                                isDirectory = file.isDirectory,
+                                dateModified = file.lastModified() / 1000
+                            )
+                            if (added) success++
+                        }
+                        if (success > 0) {
+                            Toast.makeText(context, "Đã thêm $success mục vào yêu thích", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Mục đã có trong yêu thích", Toast.LENGTH_SHORT).show()
+                        }
+                        selectionState.exit()
                     }
-                    if (success > 0) {
-                        Toast.makeText(context, "Đã thêm $success mục vào yêu thích", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "Mục đã có trong yêu thích", Toast.LENGTH_SHORT).show()
-                    }
-                    selectionState.exit()
                 }
-            },
+            } else null,  // null = ẩn (tất cả đã favorite)
+            onRemoveFromFavorites = if (canRemoveFromFavorites) {
+                {
+                    scope.launch {
+                        val paths = selectedPaths()
+                        var removed = 0
+                        for (path in paths) {
+                            if (FavoriteManager.isFavorite(context, path)) {
+                                if (FavoriteManager.removeFavorite(context, path)) removed++
+                            }
+                        }
+                        if (removed > 0) {
+                            Toast.makeText(context, "Đã xóa $removed mục khỏi yêu thích", Toast.LENGTH_SHORT).show()
+                        }
+                        selectionState.exit()
+                    }
+                }
+            } else null,  // null = ẩn (không có favorite)
             onAddToHomeScreen = {
                 val paths = selectedPaths()
                 if (paths.size == 1) {
@@ -452,8 +497,9 @@ data class SelectionActions(
     val onCopyToClipboard: () -> Unit = {},
     val onDetails: () -> Unit = {},
     val onRename: () -> Unit = {},
-    val onCompress: (() -> Unit)? = {},
-    val onExtract: (() -> Unit)? = null,
-    val onAddToFavorites: () -> Unit = {},
+    val onCompress: (() -> Unit)? = null,   // null = ẩn (khi có archive files)
+    val onExtract: (() -> Unit)? = null,   // null = ẩn (khi không có archive)
+    val onAddToFavorites: (() -> Unit)? = null,  // null = ẩn (khi đã favorite hết)
+    val onRemoveFromFavorites: (() -> Unit)? = null,  // null = ẩn (khi không có favorite)
     val onAddToHomeScreen: () -> Unit = {}
 )

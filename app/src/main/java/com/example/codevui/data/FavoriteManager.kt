@@ -60,6 +60,14 @@ object FavoriteManager {
     }
 
     /**
+     * Observe set các path đang là favorite — nhẹ, tối ưu cho UI overlay
+     * favorite icon lên các file row (giống MyFiles file_list_item layout).
+     */
+    fun observeFavoritePaths(context: Context): Flow<Set<String>> {
+        return getDao(context).observeFavoritePaths().map { it.toHashSet() }
+    }
+
+    /**
      * Lấy danh sách yêu thích (non-flow).
      */
     suspend fun getFavorites(context: Context): List<FavoriteItem> = withContext(Dispatchers.IO) {

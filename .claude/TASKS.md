@@ -21,6 +21,10 @@
 | 2026-04-04 | Claude | Hoàn thành Task #013: Triển khai Favorites (MyFiles style) — Room DB, FavoritesScreen, DrawerPane, HomeScreen |
 | 2026-04-06 | Claude | Hoàn thành Task #014: Fix Favorites thumbnail không load (mimeType null + AudioThumbnailFetcher API lỗi) |
 | 2026-04-06 | Claude | Hoàn thành Task #015: Sửa selection mode — giữ mode khi uncheck hết, chỉ thoát khi nhấn Thoát |
+| 2026-04-07 | Claude | Hoàn thành Task #016: Multi-volume storage support (Internal/SD/USB) — StorageVolumeManager, DomainType, StorageUsageManager, StorageTypeForTrash (MyFiles pattern) |
+| 2026-04-07 | Claude | Hoàn thành Task #017: Fix dung lượng Internal hiển thị 223GB → 256GB (đổi getDataDirectory → getExternalStorageDirectory); Menu visibility MyFiles (Nén/giải nén/Favorite) |
+| 2026-04-08 | Claude | Hoàn thành Task #018: Infrastructure refresh — update CLAUDE.md, tạo CLAUDE.local.md, settings.json, memory.md, rules/ (workflow, kotlin-style, compose-style, mvvm, file-operations), agents/ (code-reviewer, build-verifier, myfiles-reference, refactor-assistant), skill add-thumbnail-fetcher |
+| 2026-04-09 | Claude | Hoàn thành Task #019: Fix size file trùng lặp ở StorageManager không khớp với DuplicatesScreen — getDuplicateFilesSizeEstimate() giờ gọi findDuplicateFiles() (content hash) thay vì group-by-size-only |
 
 ---
 

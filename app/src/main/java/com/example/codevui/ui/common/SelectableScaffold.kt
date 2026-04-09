@@ -97,6 +97,7 @@ fun SelectableScaffold(
                     onCompress = actions.onCompress,
                     onExtract = actions.onExtract,
                     onAddToFavorites = actions.onAddToFavorites,
+                    onRemoveFromFavorites = actions.onRemoveFromFavorites,
                     onAddToHomeScreen = actions.onAddToHomeScreen
                 )
             }

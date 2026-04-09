@@ -9,6 +9,7 @@ import androidx.lifecycle.SavedStateHandle
 
 private const val KEY_IS_SELECTION_MODE = "selection_isSelectionMode"
 private const val KEY_SELECTED_IDS = "selection_selectedIds"
+private const val KEY_ACTIVE_CONTEXT = "selection_activeContextKey"
 
 /**
  * SelectionState — survive configuration change (xoay màn hình, đổi theme)
@@ -17,7 +18,10 @@ private const val KEY_SELECTED_IDS = "selection_selectedIds"
  * Khởi tạo trong ViewModel:
  *   val selection = SelectionState(savedStateHandle)
  *
- * FIX: Dùng observable mutableStateOf + sync với SavedStateHandle
+ * `activeContextKey` (optional): khi UI có nhiều "scope" độc lập (VD: Column View
+ * landscape có nhiều cột) thì truyền key của scope đang select khi gọi
+ * `enterSelectionMode`. Mọi `toggle` / `selectAll` sau đó vẫn chỉ áp dụng cho
+ * scope đó. UI tự dựa vào `activeContextKey` để biết cột nào đang active.
  */
 @Stable
 class SelectionState(private val savedStateHandle: SavedStateHandle) {
@@ -33,11 +37,26 @@ class SelectionState(private val savedStateHandle: SavedStateHandle) {
     )
         private set
 
+    /**
+     * Key của "scope" đang được select (VD: path của column trong Column View).
+     * `null` = không có scope rõ ràng (single-list screen như BrowseScreen portrait,
+     * FileListScreen, RecentFilesScreen…).
+     *
+     * Được set khi gọi `enterSelectionMode(firstId, contextKey)` và giữ nguyên
+     * cho đến khi `exit()`. KHÔNG bị reset khi user toggle off hết các item —
+     * điều này đảm bảo "Select all" sau đó vẫn select đúng scope ban đầu.
+     */
+    var activeContextKey by mutableStateOf(
+        savedStateHandle.get<String>(KEY_ACTIVE_CONTEXT)
+    )
+        private set
+
     val selectedCount: Int get() = selectedIds.size
 
-    fun enterSelectionMode(firstId: String) {
+    fun enterSelectionMode(firstId: String, contextKey: String? = null) {
         isSelectionMode = true
         selectedIds = setOf(firstId)
+        activeContextKey = contextKey
         save()
     }
 
@@ -61,6 +80,7 @@ class SelectionState(private val savedStateHandle: SavedStateHandle) {
     fun exit() {
         isSelectionMode = false
         selectedIds = emptySet()
+        activeContextKey = null
         save()
     }
 
@@ -68,5 +88,6 @@ class SelectionState(private val savedStateHandle: SavedStateHandle) {
     private fun save() {
         savedStateHandle[KEY_IS_SELECTION_MODE] = isSelectionMode
         savedStateHandle[KEY_SELECTED_IDS] = ArrayList(selectedIds)
+        savedStateHandle[KEY_ACTIVE_CONTEXT] = activeContextKey
     }
 }

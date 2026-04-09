@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,7 +27,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.codevui.data.FavoriteManager
 import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.model.FolderItem
 import com.example.codevui.model.RecentFile
@@ -68,6 +71,13 @@ fun BrowseScreen(
     val selection = viewModel.selection
     val snackbarHostState = remember { SnackbarHostState() }
     val operationResult by viewModel.operationResult.collectAsState()
+
+    // Observe favorite paths → overlay yellow star icon lên file/folder rows
+    // (giống MyFiles file_list_item.xml ImageView favorite_icon).
+    val context = LocalContext.current
+    val favoritePaths by remember(context) {
+        FavoriteManager.observeFavoritePaths(context)
+    }.collectAsState(initial = emptySet())
 
     // ── Operation progress state ──────────────────────────────────────────
     val operationState by viewModel.operationState.collectAsState()
@@ -146,7 +156,18 @@ fun BrowseScreen(
         else if (!viewModel.goBack()) onBack()
     }
 
-    LaunchedEffect(uiState.currentPath) { selection.exit() }
+    // Chỉ exit selection khi user thực sự navigate sang path khác,
+    // KHÔNG exit khi composition được tái tạo do config change (xoay màn
+    // hình / đổi theme). Dùng rememberSaveable để previousPath survive
+    // configuration change.
+    var previousPath by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(uiState.currentPath) {
+        val curr = uiState.currentPath
+        if (previousPath != null && previousPath != curr) {
+            selection.exit()
+        }
+        previousPath = curr
+    }
 
     // Tự dismiss dialog 1.5s sau khi Done/Error
     LaunchedEffect(operationState) {
@@ -164,11 +185,26 @@ fun BrowseScreen(
         onActionPerformed = { destPath -> viewModel.navigateToPath(destPath) }
     )
 
-    val allIds = remember(uiState.columns, uiState.folders, uiState.files, isLandscape) {
+    // Trong landscape Column View, "Tất cả" / Select All chỉ áp dụng cho
+    // column đang được select (xác định bởi selection.activeContextKey).
+    // Nếu chưa enter selection mode (activeContextKey == null) → fallback
+    // dùng column cuối cùng (column hiện hành) làm scope mặc định.
+    val allIds = remember(
+        uiState.columns,
+        uiState.folders,
+        uiState.files,
+        isLandscape,
+        selection.activeContextKey
+    ) {
         if (isLandscape && uiState.columns.isNotEmpty()) {
-            uiState.columns.flatMap { col ->
-                col.folders.map { "folder:${it.path}" } + col.files.map { "file:${it.path}" }
-            }
+            val activeKey = selection.activeContextKey
+            val activeColumn = if (activeKey != null) {
+                uiState.columns.firstOrNull { it.path == activeKey }
+            } else {
+                uiState.columns.lastOrNull()
+            } ?: uiState.columns.last()
+            activeColumn.folders.map { "folder:${it.path}" } +
+                activeColumn.files.map { "file:${it.path}" }
         } else {
             uiState.folders.map { "folder:${it.path}" } + uiState.files.map { "file:${it.path}" }
         }
@@ -370,6 +406,7 @@ fun BrowseScreen(
                             viewModel.onColumnFolderClick(columnIndex, folder)
                         },
                         onFileClick = onFileClick,
+                        favoritePaths = favoritePaths,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
@@ -379,6 +416,7 @@ fun BrowseScreen(
                         viewModel = viewModel,
                         onFileClick = onFileClick,
                         isLandscape = isLandscape,
+                        favoritePaths = favoritePaths,
                         listState = listState
                     )
                 }
@@ -513,13 +551,14 @@ private fun PortraitListView(
     viewModel: BrowseViewModel,
     onFileClick: (RecentFile) -> Unit,
     isLandscape: Boolean = false,
+    favoritePaths: Set<String> = emptySet(),
     listState: LazyListState = rememberLazyListState()
 ) {
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         val pinned = uiState.folders.filter { it.isPinned }
         val normal = uiState.folders.filter { !it.isPinned }
 
-        folderItems(pinned, selection, viewModel, isLandscape, hasNext = normal.isNotEmpty() || uiState.files.isNotEmpty())
+        folderItems(pinned, selection, viewModel, isLandscape, favoritePaths, hasNext = normal.isNotEmpty() || uiState.files.isNotEmpty())
 
         if (pinned.isNotEmpty() && normal.isNotEmpty()) {
             item {
@@ -531,8 +570,8 @@ private fun PortraitListView(
             }
         }
 
-        folderItems(normal, selection, viewModel, isLandscape, hasNext = uiState.files.isNotEmpty())
-        fileItems(uiState.files, selection, onFileClick, isLandscape)
+        folderItems(normal, selection, viewModel, isLandscape, favoritePaths, hasNext = uiState.files.isNotEmpty())
+        fileItems(uiState.files, selection, onFileClick, isLandscape, favoritePaths)
 
         if (!uiState.isLoading && uiState.folders.isEmpty() && uiState.files.isEmpty()) {
             item { EmptyState("Thư mục trống") }
@@ -545,6 +584,7 @@ private fun LazyListScope.folderItems(
     selection: SelectionState,
     viewModel: BrowseViewModel,
     isLandscape: Boolean = false,
+    favoritePaths: Set<String> = emptySet(),
     hasNext: Boolean = false
 ) {
     itemsIndexed(folders) { index, folder ->
@@ -555,6 +595,7 @@ private fun LazyListScope.folderItems(
             isSelectionMode = selection.isSelectionMode,
             isSelected = selection.isSelected(id),
             isLandscape = isLandscape,
+            isFavorite = favoritePaths.contains(folder.path),
             onClick = { viewModel.openFolder(folder.path, folder.name) },
             onLongClick = { selection.enterSelectionMode(id) },
             onToggleSelect = { selection.toggle(id) }
@@ -566,7 +607,8 @@ private fun LazyListScope.fileItems(
     files: List<RecentFile>,
     selection: SelectionState,
     onFileClick: (RecentFile) -> Unit,
-    isLandscape: Boolean = false
+    isLandscape: Boolean = false,
+    favoritePaths: Set<String> = emptySet()
 ) {
     itemsIndexed(files) { index, file ->
         val id = "file:${file.path}"
@@ -576,6 +618,7 @@ private fun LazyListScope.fileItems(
             isSelectionMode = selection.isSelectionMode,
             isSelected = selection.isSelected(id),
             isLandscape = isLandscape,
+            isFavorite = favoritePaths.contains(file.path),
             onClick = { onFileClick(file) },
             onLongClick = { selection.enterSelectionMode(id) },
             onToggleSelect = { selection.toggle(id) }

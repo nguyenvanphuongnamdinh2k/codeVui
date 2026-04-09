@@ -50,6 +50,27 @@ class FileRepository(private val context: Context) {
     private val log = Logger("FileRepository")
 
     /**
+     * Public wrapper cho correctionStorageSize — dùng cho StorageVolumeManager.
+     */
+    companion object {
+        fun correctStorageSize(rawTotalBytes: Long): Long {
+            val DISPLAY_UNIT_GB = 1_000_000_000L
+            val rootDirPath = Environment.getRootDirectory().path
+            val rootStat = StatFs(rootDirPath)
+            val realTotalSize = rawTotalBytes + rootStat.totalBytes
+
+            var power = 2
+            var tempTotalSize: Long
+            do {
+                val powOfTwo = 1L shl power
+                tempTotalSize = DISPLAY_UNIT_GB * powOfTwo
+                power++
+            } while (realTotalSize > tempTotalSize && power < 63)
+            return tempTotalSize
+        }
+    }
+
+    /**
      * Essential folders displayed in "Cần thiết" filter mode
      */
     private val essentialFolderNames = setOf(
@@ -217,16 +238,64 @@ class FileRepository(private val context: Context) {
     }
 
     /**
-     * Lấy thông tin dung lượng bộ nhớ trong
+     * Lấy thông tin dung lượng bộ nhớ trong.
+     * Dùng getExternalStorageDirectory() — đồng nhất với MyFiles.
+     * KHÔNG dùng getDataDirectory() vì nó chỉ trả về partition /data (~223 GB),
+     * trong khi MyFiles dùng /storage/emulated/0 (~256 GB).
      */
+    /**
+     * Lấy raw partition total bytes (không qua correction).
+     * Dùng cho systemBytes calculation để tránh âm.
+     */
+    fun getRawInternalStorageTotalBytes(): Long {
+        val path = Environment.getExternalStorageDirectory().absolutePath
+        return try {
+            StatFs(path).totalBytes
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
     fun getInternalStorageInfo(): StorageInfo {
-        val stat = StatFs(Environment.getDataDirectory().path)
-        val totalBytes = stat.totalBytes
+        val path = Environment.getExternalStorageDirectory().absolutePath
+        log.d("getInternalStorageInfo: path=$path")
+
+        // MyFiles dùng correctionStorageSize() để round partition size
+        // lên advertised capacity (VD: partition 223 GB → hiển thị 256 GB)
+        val stat = StatFs(path)
+        val rawTotal = stat.totalBytes
         val freeBytes = stat.availableBytes
+        val correctedTotal = correctionStorageSize(rawTotal)
+
+        log.d("getInternalStorageInfo: rawTotal=$rawTotal (${rawTotal / 1_000_000_000.0} GB / ${rawTotal / 1073741824.0} GiB), correctedTotal=$correctedTotal (${correctedTotal / 1_000_000_000.0} GB), freeBytes=$freeBytes (${freeBytes / 1_000_000_000.0} GB)")
         return StorageInfo(
-            totalBytes = totalBytes,
-            usedBytes = totalBytes - freeBytes
+            totalBytes = correctedTotal,
+            usedBytes = correctedTotal - freeBytes
         )
+    }
+
+    /**
+     * MyFiles correctionStorageSize():
+     * Raw partition size (VD: 239 GB = 223 GiB) → advertised capacity (256 GB).
+     * Round up partition size lên nearest advertised tier (8/16/32/64/128/256/512 GB...).
+     */
+    private fun correctionStorageSize(totalSize: Long): Long {
+        val DISPLAY_UNIT_GB = 1_000_000_000L // 1 GB = 1000³ bytes (manufacturer advertised)
+        val rootDirPath = Environment.getRootDirectory().path
+        val rootStat = StatFs(rootDirPath)
+        val realTotalSize = totalSize + rootStat.totalBytes
+        log.d("correctionStorageSize: totalSize=$totalSize, rootDirBytes=${rootStat.totalBytes}, realTotalSize=$realTotalSize")
+
+        var power = 2
+        var tempTotalSize: Long
+        do {
+            val powOfTwo = 1L shl power
+            tempTotalSize = DISPLAY_UNIT_GB * powOfTwo
+            power++
+        } while (realTotalSize > tempTotalSize && power < 63)
+
+        log.d("correctionStorageSize: result=$tempTotalSize (${tempTotalSize / 1000000000.0} GB advertised)")
+        return tempTotalSize
     }
 
     /**
@@ -850,44 +919,21 @@ class FileRepository(private val context: Context) {
         return total / 10 // Approximate — chỉ ước tính phần "có thể giải phóng"
     }
 
-    private fun getDuplicateFilesSizeEstimate(): Long {
-        // Scan MediaStore: group by SIZE only (không dùng tên — file đổi tên vẫn là duplicate)
-        // Chỉ tính image/video/audio (loại hay bị trùng), size > 10KB
-        val uri = MediaStore.Files.getContentUri("external")
-        val projection = arrayOf(
-            MediaStore.Files.FileColumns.SIZE,
-            MediaStore.Files.FileColumns.DATA,
-            MediaStore.Files.FileColumns.MIME_TYPE
-        )
-        val selection = "${MediaStore.Files.FileColumns.SIZE} > ?"
-        val args = arrayOf((10L * 1024).toString()) // > 10KB
-
-        // Map: size -> count
-        val sizeGroups = mutableMapOf<Long, Int>()
-
-        context.contentResolver.query(uri, projection, selection, args, null)?.use { cursor ->
-            val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE)
-            val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATA)
-            val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE)
-            while (cursor.moveToNext()) {
-                val path = cursor.getString(dataCol) ?: ""
-                if (path.contains("/.Trash/")) continue
-                val mime = cursor.getString(mimeCol) ?: ""
-                // Chỉ tính image/video/audio
-                if (!mime.startsWith("image/") && !mime.startsWith("video/") && !mime.startsWith("audio/")) continue
-                val size = cursor.getLong(sizeCol)
-                sizeGroups[size] = (sizeGroups[size] ?: 0) + 1
-            }
+    /**
+     * Ước tính dung lượng file trùng lặp — PHẢI khớp với kết quả DuplicatesScreen.
+     *
+     * Trước đây hàm này group theo SIZE only → 2 file khác nội dung nhưng trùng size bị
+     * coi là duplicate → số hiển thị ở StorageManager (vd: 300.5MB) không khớp với
+     * DuplicatesScreen (dùng content hash MD5). Sửa: gọi trực tiếp findDuplicateFiles()
+     * để 2 nơi luôn cùng logic và cùng kết quả.
+     */
+    private suspend fun getDuplicateFilesSizeEstimate(): Long {
+        return try {
+            findDuplicateFiles().sumOf { it.wastedBytes }
+        } catch (e: Exception) {
+            log.e("getDuplicateFilesSizeEstimate failed", e)
+            0L
         }
-
-        // Tính tổng: với mỗi group có > 1 file cùng size, tổng = (count - 1) * size
-        var totalDuplicateBytes = 0L
-        for ((size, count) in sizeGroups) {
-            if (count > 1) {
-                totalDuplicateBytes += size * (count - 1)
-            }
-        }
-        return totalDuplicateBytes
     }
 
     private fun getLargeFilesSizeEstimate(): Long {
@@ -1241,8 +1287,94 @@ class FileRepository(private val context: Context) {
             apkFile.length()
         } catch (_: Exception) { 0L }
     }
+
+    // ══════════════════════════════════════════════════════
+    // getVolumeFileBreakdown — per-volume file analysis
+    // Mirror từ MyFiles: phân tích file theo volume path
+    // ══════════════════════════════════════════════════════
+
+    /**
+     * Lấy file breakdown cho 1 volume cụ thể (SD card, USB).
+     * Query MediaStore với filter theo volume path.
+     *
+     * @param volumeRootPath Root path của volume (VD: /storage/XXXX-XXXX)
+     */
+    fun getVolumeFileBreakdown(volumeRootPath: String): VolumeFileBreakdown {
+        log.d("getVolumeFileBreakdown: path=$volumeRootPath")
+
+        val videoBytes = getTotalSizeByTypeAndPath(FileType.VIDEO, volumeRootPath)
+        val imageBytes = getTotalSizeByTypeAndPath(FileType.IMAGE, volumeRootPath)
+        val audioBytes = getTotalSizeByTypeAndPath(FileType.AUDIO, volumeRootPath)
+        val archiveBytes = getTotalSizeByTypeAndPath(FileType.ARCHIVE, volumeRootPath)
+        val apkBytes = getTotalSizeByTypeAndPath(FileType.APK, volumeRootPath)
+        val docBytes = getTotalSizeByTypeAndPath(FileType.DOC, volumeRootPath)
+        val downloadBytes = getTotalSizeByTypeAndPath(FileType.DOWNLOAD, volumeRootPath)
+
+        // Trash trên external storage
+        val trashDir = java.io.File(volumeRootPath, ".Trash/files")
+        val trashBytes = if (trashDir.exists()) calculateDirSize(trashDir) else 0L
+
+        log.d("getVolumeFileBreakdown: video=$videoBytes, image=$imageBytes, audio=$audioBytes, " +
+              "archive=$archiveBytes, apk=$apkBytes, doc=$docBytes, download=$downloadBytes, trash=$trashBytes")
+
+        return VolumeFileBreakdown(
+            domainType = 0,  // Caller sẽ set đúng
+            videoBytes = videoBytes,
+            imageBytes = imageBytes,
+            audioBytes = audioBytes,
+            archiveBytes = archiveBytes,
+            apkBytes = apkBytes,
+            docBytes = docBytes,
+            downloadBytes = downloadBytes,
+            trashBytes = trashBytes
+        )
+    }
+
+    /**
+     * Tính tổng size theo type + path filter
+     */
+    private fun getTotalSizeByTypeAndPath(fileType: FileType, volumeRootPath: String): Long {
+        val uri = MediaStore.Files.getContentUri("external")
+
+        val typeSelection = buildSelection(fileType) ?: return 0L
+        val pathSelection = "${MediaStore.Files.FileColumns.DATA} LIKE ?"
+        val selection = "$typeSelection AND $pathSelection"
+        val selectionArgs = arrayOf("$volumeRootPath%")
+
+        var total = 0L
+        context.contentResolver.query(
+            uri,
+            arrayOf(MediaStore.Files.FileColumns.SIZE),
+            selection,
+            selectionArgs,
+            null
+        )?.use { cursor ->
+            val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE)
+            while (cursor.moveToNext()) {
+                total += cursor.getLong(sizeCol)
+            }
+        }
+        return total
+    }
 }
 
-// ══════════════════════════════════════════════════════
-// findDuplicateFiles — Duplicate Files screen
-// ══════════════════════════════════════════════════════
+/**
+ * Per-volume file category breakdown
+ * Dùng cho SD/USB storage analysis
+ */
+data class VolumeFileBreakdown(
+    val domainType: Int = 0,
+    val videoBytes: Long = 0L,
+    val imageBytes: Long = 0L,
+    val audioBytes: Long = 0L,
+    val archiveBytes: Long = 0L,
+    val apkBytes: Long = 0L,
+    val docBytes: Long = 0L,
+    val downloadBytes: Long = 0L,
+    val trashBytes: Long = 0L,
+    val otherBytes: Long = 0L,
+    val systemBytes: Long = 0L
+) {
+    val totalCategorized: Long
+        get() = videoBytes + imageBytes + audioBytes + archiveBytes + apkBytes + docBytes
+}
