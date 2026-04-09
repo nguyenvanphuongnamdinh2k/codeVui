@@ -25,6 +25,8 @@
 | 2026-04-07 | Claude | Hoàn thành Task #017: Fix dung lượng Internal hiển thị 223GB → 256GB (đổi getDataDirectory → getExternalStorageDirectory); Menu visibility MyFiles (Nén/giải nén/Favorite) |
 | 2026-04-08 | Claude | Hoàn thành Task #018: Infrastructure refresh — update CLAUDE.md, tạo CLAUDE.local.md, settings.json, memory.md, rules/ (workflow, kotlin-style, compose-style, mvvm, file-operations), agents/ (code-reviewer, build-verifier, myfiles-reference, refactor-assistant), skill add-thumbnail-fetcher |
 | 2026-04-09 | Claude | Hoàn thành Task #019: Fix size file trùng lặp ở StorageManager không khớp với DuplicatesScreen — getDuplicateFilesSizeEstimate() giờ gọi findDuplicateFiles() (content hash) thay vì group-by-size-only |
+| 2026-04-09 | Claude | Hoàn thành Task #020: Thêm icon Yêu thích (Star) vào TopAppBar của FileListScreen, BrowseScreen, RecentFilesScreen, SearchScreen — SelectableScaffold + DefaultTopBar giờ có param onFavoritesClick nullable |
+| 2026-04-09 | Claude | Hoàn thành Task #021: Hiển thị dấu sao favorite trên file/folder rows của FileListScreen, RecentFilesScreen, SearchScreen — observe FavoriteManager.observeFavoritePaths giống BrowseScreen, pass isFavorite vào FileListItem/FolderListItem |
 
 ---
 

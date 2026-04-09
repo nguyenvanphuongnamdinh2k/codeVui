@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
+import com.example.codevui.data.FavoriteManager
 import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.model.RecentFile
 import com.example.codevui.ui.common.EmptyState
@@ -39,10 +41,17 @@ fun RecentFilesScreen(
     onFileClick: (RecentFile) -> Unit = {},
     onNavigateToFolder: (String) -> Unit = {},
     onTrashClick: () -> Unit = {},
+    onFavoritesClick: () -> Unit = {},
     isLandscape: Boolean = false
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val selection = viewModel.selection
+
+    // Observe favorite paths → overlay star icon lên file rows
+    val context = LocalContext.current
+    val favoritePaths by remember(context) {
+        FavoriteManager.observeFavoritePaths(context)
+    }.collectAsState(initial = emptySet())
 
     // Khi navigate từ Home với long click — chờ data load xong rồi select
     LaunchedEffect(initialSelectedPath, uiState.files) {
@@ -107,6 +116,7 @@ fun RecentFilesScreen(
             allIds = uiState.files.map { it.path },
             onBack = onBack,
             onTrashClick = onTrashClick,
+            onFavoritesClick = onFavoritesClick,
             snackbarHost = {
                 SnackbarHost(hostState = snackbarHostState)
             }
@@ -141,6 +151,7 @@ fun RecentFilesScreen(
                                 isSelectionMode = selection.isSelectionMode,
                                 isSelected = selection.isSelected(file.path),
                                 isLandscape = isLandscape,
+                                isFavorite = favoritePaths.contains(file.path),
                                 onClick = { onFileClick(file) },
                                 onLongClick = { selection.enterSelectionMode(file.path) },
                                 onToggleSelect = { selection.toggle(file.path) }

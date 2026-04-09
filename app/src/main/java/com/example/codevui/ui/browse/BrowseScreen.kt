@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -63,6 +64,7 @@ fun BrowseScreen(
     viewModel: BrowseViewModel = viewModel(),
     onBack: () -> Unit = {},
     onHomeClick: () -> Unit = {},
+    onFavoritesClick: () -> Unit = {},
     onFileClick: (RecentFile) -> Unit = {},
     onSearchClick: () -> Unit = {},
     onTrashClick: () -> Unit = {}
@@ -238,6 +240,14 @@ fun BrowseScreen(
                             }
                         },
                         actions = {
+                            IconButton(onClick = onFavoritesClick, modifier = Modifier.size(36.dp)) {
+                                Icon(
+                                    Icons.Outlined.Star,
+                                    contentDescription = "Yêu thích",
+                                    tint = Color(0xFFFFB300),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                             IconButton(onClick = onSearchClick, modifier = Modifier.size(36.dp)) {
                                 Icon(Icons.Default.Search, contentDescription = "Tìm kiếm", modifier = Modifier.size(20.dp))
                             }
@@ -306,6 +316,13 @@ fun BrowseScreen(
                             }
                         },
                         actions = {
+                            IconButton(onClick = onFavoritesClick) {
+                                Icon(
+                                    Icons.Outlined.Star,
+                                    contentDescription = "Yêu thích",
+                                    tint = Color(0xFFFFB300)
+                                )
+                            }
                             IconButton(onClick = onSearchClick) {
                                 Icon(Icons.Default.Search, contentDescription = "Tìm kiếm")
                             }

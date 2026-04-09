@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +32,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
+import com.example.codevui.data.FavoriteManager
 import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.model.FileType
 import com.example.codevui.model.RecentFile
@@ -52,12 +55,19 @@ fun SearchScreen(
     viewModel: SearchViewModel = viewModel(),
     onBack: () -> Unit = {},
     onFileClick: (RecentFile) -> Unit = {},
-    onNavigateToFolder: (String) -> Unit = {}
+    onNavigateToFolder: (String) -> Unit = {},
+    onFavoritesClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val selection = viewModel.selection
     val snackbarHostState = remember { SnackbarHostState() }
     val operationResult by viewModel.operationResult.collectAsState()
+
+    // Observe favorite paths → overlay star icon lên file/folder rows
+    val context = LocalContext.current
+    val favoritePaths by remember(context) {
+        FavoriteManager.observeFavoritePaths(context)
+    }.collectAsState(initial = emptySet())
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
@@ -131,6 +141,15 @@ fun SearchScreen(
                         }
                     },
                     title = { },
+                    actions = {
+                        IconButton(onClick = onFavoritesClick) {
+                            Icon(
+                                Icons.Outlined.Star,
+                                contentDescription = "Yêu thích",
+                                tint = Color(0xFFFFB300)
+                            )
+                        }
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
                 )
             }
@@ -196,6 +215,7 @@ fun SearchScreen(
                         isSelectionMode = selection.isSelectionMode,
                         isSelected = selection.isSelected(id),
                         isLandscape = isLandscape,
+                        isFavorite = favoritePaths.contains(folder.path),
                         onClick = { onNavigateToFolder(folder.path) },
                         onLongClick = { selection.enterSelectionMode(id) },
                         onToggleSelect = { selection.toggle(id) }
@@ -214,6 +234,7 @@ fun SearchScreen(
                         isSelectionMode = selection.isSelectionMode,
                         isSelected = selection.isSelected(id),
                         isLandscape = isLandscape,
+                        isFavorite = favoritePaths.contains(file.path),
                         onClick = { onFileClick(file) },
                         onLongClick = { selection.enterSelectionMode(id) },
                         onToggleSelect = { selection.toggle(id) }

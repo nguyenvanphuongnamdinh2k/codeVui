@@ -178,6 +178,20 @@ fun MyFilesApp(
         }
     }
 
+    // Open a FavoriteItem file (convert to RecentFile then reuse handleFileOpen)
+    val openFavoriteFile: (com.example.codevui.model.FavoriteItem) -> Unit = { item ->
+        val file = com.example.codevui.model.RecentFile(
+            name = item.name,
+            date = "",
+            type = com.example.codevui.model.FileType.fromMimeType(item.mimeType),
+            uri = item.uri,
+            path = item.path,
+            size = item.size,
+            dateModified = item.dateModified
+        )
+        handleFileOpen(file)
+    }
+
     // remember để tránh tạo lại lambda mỗi lần recompose
     val onDrawerNavigate = remember(mainViewModel) {
         { screen: Screen ->
@@ -229,7 +243,8 @@ fun MyFilesApp(
                     onNavigateToFolder = { folderPath ->
                         mainViewModel.navigateTo(Screen.Browse(initialPath = folderPath))
                     },
-                    onTrashClick = { mainViewModel.navigateTo(Screen.Trash) }
+                    onTrashClick = { mainViewModel.navigateTo(Screen.Trash) },
+                    onFavoritesClick = { mainViewModel.navigateTo(Screen.Favorites) }
                 )
             }
             is Screen.Browse -> {
@@ -238,6 +253,7 @@ fun MyFilesApp(
                     initialPath = screen.initialPath,
                     onBack = { mainViewModel.goBack() },
                     onHomeClick = { mainViewModel.navigateReplace(Screen.Home) },
+                    onFavoritesClick = { mainViewModel.navigateTo(Screen.Favorites) },
                     onFileClick = handleFileOpen,
                     onSearchClick = { mainViewModel.navigateTo(Screen.Search) },
                     onTrashClick = { mainViewModel.navigateTo(Screen.Trash) }
@@ -269,6 +285,7 @@ fun MyFilesApp(
                         mainViewModel.navigateTo(Screen.Browse(initialPath = folderPath))
                     },
                     onTrashClick = { mainViewModel.navigateTo(Screen.Trash) },
+                    onFavoritesClick = { mainViewModel.navigateTo(Screen.Favorites) },
                     isLandscape = isLandscape
                 )
             }
@@ -278,7 +295,8 @@ fun MyFilesApp(
                     onFileClick = handleFileOpen,
                     onNavigateToFolder = { folderPath ->
                         mainViewModel.navigateTo(Screen.Browse(initialPath = folderPath))
-                    }
+                    },
+                    onFavoritesClick = { mainViewModel.navigateTo(Screen.Favorites) }
                 )
             }
             is Screen.Trash -> {
@@ -359,7 +377,12 @@ fun MyFilesApp(
             is Screen.Favorites -> {
                 FavoritesScreen(
                     onBack = { mainViewModel.goBack() },
-                    onItemClick = { /* navigate to file location */ }
+                    onFolderClick = { path ->
+                        mainViewModel.navigateTo(Screen.Browse(initialPath = path))
+                    },
+                    onFileClick = { item ->
+                        openFavoriteFile(item)
+                    }
                 )
             }
         }

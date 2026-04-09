@@ -74,6 +74,42 @@
 
 ---
 
+### Task #006 — Folder Favorites + Navigate on Click
+**Ngày:** 2026-04-09
+**Mô tả:** Thêm hỗ trợ favorite folder + click folder → navigate vào folder (BrowseScreen), click file → mở file.
+
+**Files đã sửa:**
+- `ui/favorites/FavoritesScreen.kt` — Đổi `onItemClick(FavoriteItem)` → `onFolderClick(path)` + `onFileClick(item)`, xử lý phân biệt folder vs file
+- `ui/favorites/FavoritesUiState.kt` — (không thay đổi)
+- `MainActivity.kt` — Thêm `openFavoriteFile` lambda, cập nhật FavoritesScreen callbacks: folder → `navigateTo(Browse)`, file → `openFavoriteFile()`
+- `data/FavoriteAction.kt` — Thêm `addFolderToFavorites()`, `toggleFolderFavorite()`, update `isDirectory` handling
+
+**Patterns triển khai:**
+- Folder click: `mainViewModel.navigateTo(Screen.Browse(initialPath = folderPath))`
+- File click: convert `FavoriteItem` → `RecentFile` → reuse `handleFileOpen()`
+- FavoritesScreen: phân biệt folder/file qua `item.isDirectory` flag
+
+---
+
+### Task #007 — Full Selection Menu cho FavoritesScreen
+**Ngày:** 2026-04-09
+**Mô tả:** Thay custom `FavoritesBottomBar` bằng `SelectionBottomBar` (dùng chung với BrowseScreen/FileListScreen), hỗ trợ đầy đủ action: Di chuyển | Sao chép | Chia sẻ | Xóa | N.hơn (Chi tiết/Đổi tên/Nén/Yêu thích).
+
+**Files đã sửa:**
+- `ui/favorites/FavoritesViewModel.kt` — Extend `BaseFileOperationViewModel` (thay vì `AndroidViewModel`), thêm `SelectionState`, `FileActionState`, `ClipboardManager`, delegate `copyFiles/moveFiles/compressFiles` sang base class
+- `ui/favorites/FavoritesUiState.kt` — Thêm `operationState`, `isOperationRunning`, `operationTitle` cho progress tracking
+- `ui/favorites/FavoritesScreen.kt` — Dùng `SelectionTopBar`, `SelectionBottomBar`, `selectionActionHandler`, `OperationProgressDialog`, thay thế custom selection state bằng `viewModel.selection`
+- `ui/common/BaseFileOperationViewModel.kt` — Thêm `dismissOperationResult()` method (đang được gọi bởi các screen nhưng chưa có)
+
+**Patterns triển khai:**
+- `selectionActionHandler()` — composable function trả về `SelectionActions` với tất cả callbacks đã implement
+- FolderPickerSheet cho Copy/Move destination
+- ConflictDialog cho resolve trùng tên
+- MoveToTrashDialog cho confirm delete
+- `SelectionBottomBar` với nullable callbacks: `onCompress=null` khi có archive, `onExtract!=null` khi có archive
+
+---
+
 ## 📋 Tasks Đang Làm
 
 ### Task #005 — Google Drive Screen
@@ -100,7 +136,7 @@
 ### Priority: Cao
 - [ ] **Thêm clipboard sync** — Đồng bộ với system clipboard (copy path)
 - [ ] **Kiểm tra permission handling** — Android 13+ READ_MEDIA_* permissions
-- [ ] **Thêm favorites system** — Yêu thích file/folder
+- [x] **Thêm favorites system** — Yêu thích file/folder (✅ folder + navigate on click)
 
 ### Priority: Trung bình
 - [ ] **Text Editor improvements** — Auto-save, font size persistence
@@ -140,3 +176,4 @@
 | Ngày | Ghi chú |
 |---|---|
 | 2026-03-31 | Tạo TASKS.md, ghi nhận Task #001-#004 |
+| 2026-04-09 | Task #006: folder favorites + navigate on click trong FavoritesScreen |

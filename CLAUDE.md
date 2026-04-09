@@ -61,7 +61,7 @@ com.example.codevui/
 │   ├── MediaStoreObserver.kt      # ContentObserver → Flow (auto-reload)
 │   ├── RecommendRepository.kt     # Recommend cards (MyFiles style) — Strategy pattern
 │   ├── FavoriteManager.kt         # Yêu thích — Room DB CRUD + MIME/path resolution
-│   ├── FavoriteAction.kt          # Data class chứa onAddToFavorites/onRemoveFromFavorites callbacks
+│   ├── FavoriteAction.kt          # Object chứa suspend fun: add/remove/toggle favorites cho file và folder
 │   ├── StorageVolumeManager.kt    # Quản lý nhiều ổ lưu trữ (Internal/SD/USB) — MyFiles pattern
 │   ├── DomainType.kt              # Constants cho storage domain (INTERNAL=1, SD=2, USB=3-8)
 │   ├── StorageUsageManager.kt     # Lấy used/total/free size của từng volume
@@ -164,8 +164,8 @@ com.example.codevui/
 │   │   └── RecommendUiState.kt       # RecommendCard, RecommendFile, RecommendType
 │   │
 │   ├── favorites/
-│   │   ├── FavoritesScreen.kt   # Yêu thích — list, selection mode, thumbnail (Coil), FavoriteThumbnail với imageLoaded state
-│   │   ├── FavoritesViewModel.kt  # observeFavorites (Room Flow)
+│   │   ├── FavoritesScreen.kt   # Yêu thích — list, selection mode, thumbnail (Coil), FavoriteThumbnail với imageLoaded state. Hỗ trợ folder: click folder → navigate vào BrowseScreen, click file → mở file
+│   │   ├── FavoritesViewModel.kt  # observeFavorites (Room Flow) + SelectionState + BaseFileOperationViewModel (Copy/Move/Compress delegate)
 │   │   ├── FavoritesUiState.kt
 │   │
 │   ├── trash/
@@ -632,6 +632,9 @@ AndroidViewModel
     │   ├── FileListViewModel
     │   ├── RecentFilesViewModel
     │   └── SearchViewModel
+    ├── FavoritesViewModel                # + SelectionState (copy/move/delete/share)
+    │   # Favorites không dùng MediaStore → extend trực tiếp BaseFileOperationViewModel
+    │   # Room Flow auto-reload khi DB thay đổi
     └── ArchiveViewModel                  # (extends AndroidViewModel directly)
         # Archive không dùng MediaStore → không cần BaseMediaStoreViewModel
 ```

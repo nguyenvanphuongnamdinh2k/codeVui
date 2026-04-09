@@ -1,5 +1,11 @@
 package com.example.codevui.ui.favorites
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.os.Environment
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -16,7 +22,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.AudioFile
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
@@ -36,18 +41,25 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
+import androidx.lifecycle.SavedStateHandle
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import com.example.codevui.AppImageLoader
+import com.example.codevui.R
 import com.example.codevui.model.FavoriteItem
 import com.example.codevui.model.FileType
+import com.example.codevui.ui.common.viewmodel.OperationResultManager
+import com.example.codevui.ui.progress.OperationProgressDialog
 import com.example.codevui.ui.selection.SelectionCheckbox
+import com.example.codevui.ui.selection.SelectionBottomBar
+import com.example.codevui.ui.selection.SelectionTopBar
+import com.example.codevui.ui.selection.selectionActionHandler
 import com.example.codevui.ui.thumbnail.ThumbnailData
 import com.example.codevui.util.Logger
 import com.example.codevui.util.formatDateFull
 import com.example.codevui.util.formatFileSize
+import java.io.File
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Main Screen
@@ -58,40 +70,38 @@ import com.example.codevui.util.formatFileSize
 fun FavoritesScreen(
     viewModel: FavoritesViewModel = viewModel(),
     onBack: () -> Unit = {},
-    onItemClick: (FavoriteItem) -> Unit = {}
+    onFolderClick: (path: String) -> Unit = {},
+    onFileClick: (item: FavoriteItem) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
-    // Selection state
-    var selectedPaths by remember { mutableStateOf(emptySet<String>()) }
-    var isSelectionMode by remember { mutableStateOf(false) }
+    // Get selection actions (handles Copy/Move/Share/Delete/Dialogs internally)
+    val actions = selectionActionHandler(
+        selectionState = viewModel.selection,
+        fileActionState = viewModel.fileAction,
+        fileClipboard = viewModel.clipboard,
+        currentPath = Environment.getExternalStorageDirectory().absolutePath,
+        onOperationComplete = { /* Room Flow auto-updates */ },
+        onCopyFiles = { paths, dest, _ -> viewModel.copyFiles(paths, dest) },
+        onMoveFiles = { paths, dest, _ -> viewModel.moveFiles(paths, dest) },
+        onCompressFiles = { paths, zipName -> viewModel.compressFiles(paths, zipName) },
+        onExtractArchive = { _, _ -> /* Not supported in FavoritesScreen */ }
+    )
 
-    fun toggle(path: String) {
-        selectedPaths = if (path in selectedPaths) {
-            selectedPaths - path  // Giữ selection mode — chỉ thoát khi user nhấn nút Thoát
-        } else selectedPaths + path
+    // ── Show operation progress dialog
+    val currentOpState = viewModel.operationState.value
+    if (currentOpState != null) {
+        OperationProgressDialog(
+            title = uiState.operationTitle,
+            state = currentOpState,
+            onDismiss = { /* keep running in background */ },
+            onCancel = { viewModel.cancelOperation() }
+        )
     }
 
-    fun enterSelectionMode(path: String) {
-        selectedPaths = setOf(path)
-        isSelectionMode = true
-    }
-
-    fun exitSelection() {
-        selectedPaths = emptySet()
-        isSelectionMode = false
-    }
-
-    fun selectAll() {
-        if (selectedPaths.size == uiState.favorites.size) {
-            selectedPaths = emptySet()
-        } else {
-            selectedPaths = uiState.favorites.map { it.path }.toSet()
-        }
-    }
-
-    // Snackbar for delete result
+    // ── Snackbar for delete result
     LaunchedEffect(uiState.deletedCount) {
         if (uiState.deletedCount > 0) {
             snackbarHostState.showSnackbar("Đã xóa ${uiState.deletedCount} khỏi yêu thích")
@@ -106,19 +116,30 @@ fun FavoritesScreen(
         }
     }
 
+    // ── Operation result snackbar
+    val operationResult by viewModel.resultManager.operationResult.collectAsState()
+    LaunchedEffect(operationResult) {
+        operationResult?.let { result ->
+            if (result.success > 0) {
+                val actionName = result.actionName
+                snackbarHostState.showSnackbar("Đã $actionName ${result.success} mục")
+            }
+            viewModel.clearOperationResult()
+        }
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (isSelectionMode) exitSelection() else onBack()
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Quay lại")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
-            )
+            if (viewModel.selection.isSelectionMode) {
+                SelectionTopBar(
+                    selectedCount = viewModel.selection.selectedCount,
+                    totalCount = uiState.favorites.size,
+                    onSelectAll = { viewModel.selection.selectAll(uiState.favorites.map { it.path }) },
+                    onExit = { viewModel.selection.exit() }
+                )
+            } else {
+                FavoritesTopBar(onBack = onBack)
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color.White
@@ -129,16 +150,14 @@ fun FavoritesScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                // ── Header ──────────────────────────────────────────────
-                FavoritesHeader(
-                    totalCount = uiState.favorites.size,
-                    isSelectionMode = isSelectionMode,
-                    selectedCount = selectedPaths.size,
-                    onSelectAll = { selectAll() },
-                    onCancel = { exitSelection() }
-                )
+                // ── Normal mode hint
+                if (!viewModel.selection.isSelectionMode) {
+                    if (uiState.favorites.isNotEmpty()) {
+                        FavoritesHint(totalCount = uiState.favorites.size)
+                    }
+                }
 
-                // ── Content ──────────────────────────────────────────
+                // ── Content
                 if (uiState.isLoading) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -147,33 +166,7 @@ fun FavoritesScreen(
                         CircularProgressIndicator(strokeWidth = 2.dp)
                     }
                 } else if (uiState.favorites.isEmpty()) {
-                    // Empty state
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Outlined.Star,
-                                contentDescription = null,
-                                tint = Color(0xFFDDDDDD),
-                                modifier = Modifier.size(72.dp)
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                "Chưa có mục yêu thích",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFF666666)
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                "Nhấn giữ để thêm file vào yêu thích",
-                                fontSize = 13.sp,
-                                color = Color(0xFFAAAAAA)
-                            )
-                        }
-                    }
+                    FavoritesEmptyState()
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         itemsIndexed(
@@ -182,51 +175,71 @@ fun FavoritesScreen(
                         ) { index, item ->
                             FavoriteListItem(
                                 item = item,
-                                isSelectionMode = isSelectionMode,
-                                isSelected = item.path in selectedPaths,
+                                isSelectionMode = viewModel.selection.isSelectionMode,
+                                isSelected = viewModel.selection.isSelected(item.path),
                                 showDivider = index < uiState.favorites.lastIndex,
                                 onClick = {
-                                    if (isSelectionMode) {
-                                        toggle(item.path)
+                                    if (viewModel.selection.isSelectionMode) {
+                                        viewModel.selection.toggle(item.path)
+                                    } else if (item.isDirectory) {
+                                        onFolderClick(item.path)
                                     } else {
-                                        onItemClick(item)
+                                        onFileClick(item)
                                     }
                                 },
                                 onLongClick = {
-                                    if (!isSelectionMode) {
-                                        enterSelectionMode(item.path)
+                                    if (!viewModel.selection.isSelectionMode) {
+                                        viewModel.selection.enterSelectionMode(item.path)
                                     }
                                 }
                             )
                         }
 
-                        // Spacer cho bottom bar
+                        // Spacer for bottom bar
                         item {
                             Spacer(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(if (isSelectionMode && selectedPaths.isNotEmpty()) 72.dp else 0.dp)
+                                    .height(
+                                        if (viewModel.selection.isSelectionMode && viewModel.selection.selectedCount > 0) {
+                                            72.dp
+                                        } else 0.dp
+                                    )
                             )
                         }
                     }
                 }
             }
 
-            // ── Bottom action bar — trong Box để đè lên content, không che list ──
+            // ── Bottom action bar
             AnimatedVisibility(
-                visible = isSelectionMode && selectedPaths.isNotEmpty(),
+                visible = viewModel.selection.isSelectionMode && viewModel.selection.selectedCount > 0,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth(),
                 enter = expandVertically(),
                 exit = shrinkVertically()
             ) {
-                FavoritesBottomBar(
-                    selectedCount = selectedPaths.size,
+                SelectionBottomBar(
+                    onMove = actions.onMove,
+                    onCopy = actions.onCopy,
+                    onShare = actions.onShare,
                     onDelete = {
-                        viewModel.deleteFavorite(selectedPaths.toList())
-                        exitSelection()
-                    }
+                        // Delete from favorites (move to trash)
+                        val paths = viewModel.selection.selectedIds
+                            .map { it.removePrefix("file:").removePrefix("folder:") }
+                        viewModel.deleteSelected(paths)
+                        viewModel.selection.exit()
+                    },
+                    onCopyToClipboard = actions.onCopyToClipboard,
+                    onCopyToFileClipboard = actions.onCopyToFileClipboard,
+                    onDetails = actions.onDetails,
+                    onRename = actions.onRename,
+                    onCompress = actions.onCompress,
+                    onExtract = actions.onExtract,
+                    onAddToFavorites = actions.onAddToFavorites,
+                    onRemoveFromFavorites = actions.onRemoveFromFavorites,
+                    onAddToHomeScreen = actions.onAddToHomeScreen
                 )
             }
         }
@@ -234,91 +247,107 @@ fun FavoritesScreen(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Header
+// TopBar
+// ══════════════════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FavoritesTopBar(onBack: () -> Unit) {
+    TopAppBar(
+        title = { },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Quay lại")
+            }
+        },
+        actions = {
+            Icon(
+                Icons.Outlined.Star,
+                contentDescription = null,
+                tint = Color(0xFFFFB300),
+                modifier = Modifier
+                    .size(28.dp)
+                    .padding(end = 16.dp)
+            )
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+    )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Hint / Header
 // ══════════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun FavoritesHeader(
-    totalCount: Int,
-    isSelectionMode: Boolean,
-    selectedCount: Int,
-    onSelectAll: () -> Unit,
-    onCancel: () -> Unit
-) {
+private fun FavoritesHint(totalCount: Int) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color.White)
             .padding(horizontal = 20.dp, vertical = 8.dp)
     ) {
-        if (isSelectionMode) {
-            // Selection mode header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onSelectAll) {
-                    SelectionCheckbox(
-                        isSelected = selectedCount == totalCount && totalCount > 0,
-                        onClick = onSelectAll
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text("Tất cả", fontSize = 13.sp, color = Color(0xFF666666))
-                Spacer(Modifier.width(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Đã chọn $selectedCount",
-                    fontSize = 18.sp,
+                    text = "Yêu thích",
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF1A1A1A)
                 )
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onCancel) {
-                    Text("Thoát", fontWeight = FontWeight.Bold)
-                }
-            }
-        } else {
-            // Normal header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Yêu thích",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1A1A1A)
-                    )
-                    if (totalCount > 0) {
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = "$totalCount mục",
-                            fontSize = 14.sp,
-                            color = Color(0xFF888888)
-                        )
-                    }
-                }
-
-                Icon(
-                    Icons.Outlined.Star,
-                    contentDescription = null,
-                    tint = Color(0xFFFFB300),
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-
-            if (totalCount > 0) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(2.dp))
                 Text(
-                    text = "Nhấn giữ để chọn và xóa khỏi yêu thích",
-                    fontSize = 13.sp,
-                    color = Color(0xFFAAAAAA)
+                    text = "$totalCount mục",
+                    fontSize = 14.sp,
+                    color = Color(0xFF888888)
                 )
             }
         }
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Nhấn giữ để chọn và thực hiện thao tác",
+            fontSize = 13.sp,
+            color = Color(0xFFAAAAAA)
+        )
     }
     HorizontalDivider(thickness = 0.5.dp, color = Color(0xFFF0F0F0))
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Empty State
+// ══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun FavoritesEmptyState() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Outlined.Star,
+                contentDescription = null,
+                tint = Color(0xFFDDDDDD),
+                modifier = Modifier.size(72.dp)
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Chưa có mục yêu thích",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF666666)
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Nhấn giữ để thêm file vào yêu thích",
+                fontSize = 13.sp,
+                color = Color(0xFFAAAAAA)
+            )
+        }
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -425,7 +454,6 @@ private fun FavoriteThumbnail(
     val context = LocalContext.current
     val log = Logger("FavoriteThumbnail")
 
-    // Track image loading state — chỉ hiện background/icon khi chưa load xong
     var imageLoaded by remember { mutableStateOf(false) }
 
     log.d("FavoriteThumbnail: name=${item.name}, mimeType=${item.mimeType}, uri=${item.uri}, isDir=${item.isDirectory}, fileType=$fileType")
@@ -434,16 +462,14 @@ private fun FavoriteThumbnail(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .then(
-                // Chỉ có background khi chưa load xong ảnh
                 if (!imageLoaded) Modifier.background(Color(0xFFF5F5F5))
                 else Modifier
             ),
         contentAlignment = Alignment.Center
     ) {
         if (!item.isDirectory && item.uri != android.net.Uri.EMPTY) {
-            // Chỉ tạo ThumbnailData khi có đủ thông tin (path cần cho legacy fallback)
             val thumbnailData: ThumbnailData? = when (fileType) {
-                FileType.IMAGE -> null // IMAGE dùng Uri trực tiếp, không cần custom fetcher
+                FileType.IMAGE -> null
                 FileType.VIDEO -> if (item.path.isNotEmpty()) ThumbnailData.Video(
                     uri = item.uri,
                     path = item.path
@@ -458,10 +484,8 @@ private fun FavoriteThumbnail(
                 ) else null
                 else -> null
             }
-            log.d("FavoriteThumbnail: thumbnailData=$thumbnailData")
 
             if (thumbnailData != null) {
-                // Video, Audio, APK → dùng custom fetcher
                 val imageRequest = ImageRequest.Builder(context)
                     .data(thumbnailData)
                     .crossfade(true)
@@ -482,7 +506,6 @@ private fun FavoriteThumbnail(
                         )
                     },
                     error = {
-                        log.w("FavoriteThumbnail ERROR: name=${item.name}, fileType=$fileType, thumbnailData=$thumbnailData")
                         Icon(
                             getFavoriteIcon(fileType, item.isDirectory),
                             contentDescription = null,
@@ -491,13 +514,11 @@ private fun FavoriteThumbnail(
                         )
                     },
                     success = {
-                        log.d("FavoriteThumbnail SUCCESS: name=${item.name}")
                         imageLoaded = true
                         SubcomposeAsyncImageContent(modifier = Modifier.fillMaxSize())
                     }
                 )
             } else if (fileType == FileType.IMAGE && item.uri != android.net.Uri.EMPTY) {
-                // IMAGE → load trực tiếp từ Uri bằng SubcomposeAsyncImage
                 SubcomposeAsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(item.uri)
@@ -516,7 +537,6 @@ private fun FavoriteThumbnail(
                         )
                     },
                     error = {
-                        log.w("FavoriteThumbnail IMAGE ERROR: name=${item.name}, uri=${item.uri}")
                         Icon(
                             getFavoriteIcon(fileType, item.isDirectory),
                             contentDescription = null,
@@ -525,13 +545,11 @@ private fun FavoriteThumbnail(
                         )
                     },
                     success = {
-                        log.d("FavoriteThumbnail IMAGE SUCCESS: name=${item.name}")
                         imageLoaded = true
                         SubcomposeAsyncImageContent(modifier = Modifier.fillMaxSize())
                     }
                 )
             } else {
-                log.w("FavoriteThumbnail: no thumbnail branch — fileType=$fileType, uri=${item.uri}")
                 Icon(
                     getFavoriteIcon(fileType, item.isDirectory),
                     contentDescription = null,
@@ -540,7 +558,6 @@ private fun FavoriteThumbnail(
                 )
             }
         } else {
-            log.w("FavoriteThumbnail: isDir=${item.isDirectory}, uri=${item.uri} — showing icon fallback")
             Icon(
                 getFavoriteIcon(fileType, item.isDirectory),
                 contentDescription = null,
@@ -563,53 +580,3 @@ private fun getFavoriteIcon(fileType: FileType, isDirectory: Boolean): androidx.
         fileType == FileType.ARCHIVE -> Icons.Default.Archive
         else -> Icons.Default.InsertDriveFile
     }
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Bottom action bar
-// ══════════════════════════════════════════════════════════════════════════════
-
-@Composable
-private fun FavoritesBottomBar(
-    selectedCount: Int,
-    onDelete: () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = Color.White,
-        shadowElevation = 8.dp
-    ) {
-        Column {
-            HorizontalDivider(thickness = 0.5.dp, color = Color(0xFFE0E0E0))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "$selectedCount mục được chọn",
-                    fontSize = 13.sp,
-                    color = Color(0xFF666666),
-                    modifier = Modifier.weight(1f)
-                )
-
-                Button(
-                    onClick = onDelete,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text("Xóa khỏi yêu thích", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-        }
-    }
-}

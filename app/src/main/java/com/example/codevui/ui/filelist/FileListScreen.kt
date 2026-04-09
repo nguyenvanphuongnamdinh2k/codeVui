@@ -14,9 +14,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.codevui.data.FavoriteManager
 import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.model.FileType
 import com.example.codevui.model.RecentFile
@@ -41,11 +43,18 @@ fun FileListScreen(
     onBack: () -> Unit = {},
     onFileClick: (RecentFile) -> Unit = {},
     onNavigateToFolder: (String) -> Unit = {},
-    onTrashClick: () -> Unit = {}
+    onTrashClick: () -> Unit = {},
+    onFavoritesClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val selection = viewModel.selection
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Observe favorite paths → overlay star icon lên file rows (giống BrowseScreen)
+    val context = LocalContext.current
+    val favoritePaths by remember(context) {
+        FavoriteManager.observeFavoritePaths(context)
+    }.collectAsState(initial = emptySet())
     val operationResult by viewModel.operationResult.collectAsState()
 
     // ── Operation progress state ──────────────────────────────────────────
@@ -102,6 +111,7 @@ fun FileListScreen(
             allIds = uiState.files.map { it.path },
             onBack = onBack,
             onTrashClick = onTrashClick,
+            onFavoritesClick = onFavoritesClick,
             snackbarHost = {
                 SnackbarHost(hostState = snackbarHostState)
             }
@@ -148,6 +158,7 @@ fun FileListScreen(
                         isSelectionMode = selection.isSelectionMode,
                         isSelected = selection.isSelected(file.path),
                         isLandscape = isLandscape,
+                        isFavorite = favoritePaths.contains(file.path),
                         onClick = { onFileClick(file) },
                         onLongClick = { selection.enterSelectionMode(file.path) },
                         onToggleSelect = { selection.toggle(file.path) }

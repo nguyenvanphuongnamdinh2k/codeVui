@@ -1,10 +1,16 @@
 package com.example.codevui.ui.favorites
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import android.os.Environment
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.example.codevui.data.FavoriteManager
 import com.example.codevui.data.MediaStoreScanner
+import com.example.codevui.ui.clipboard.ClipboardManager
+import com.example.codevui.ui.common.BaseFileOperationViewModel
+import com.example.codevui.ui.common.viewmodel.OperationResultManager
+import com.example.codevui.ui.selection.FileActionState
+import com.example.codevui.ui.selection.SelectionState
 import com.example.codevui.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,13 +24,24 @@ import kotlinx.coroutines.launch
  * Luồng hoạt động:
  * 1. Observe favorites từ Room (Flow) → tự động update UI
  * 2. Validate favorites (xóa những file không tồn tại)
- * 3. Delete selected → move to trash → scan → reload
+ * 3. Selection mode: Move/Copy/Share/Delete/Rename/Details/Compress
  * 4. Reorder → cập nhật sortOrder
  */
-class FavoritesViewModel(application: Application) : AndroidViewModel(application) {
+class FavoritesViewModel(
+    application: Application,
+    savedStateHandle: SavedStateHandle = SavedStateHandle()
+) : BaseFileOperationViewModel(application) {
 
     private val log = Logger("FavoritesViewModel")
     private val context = application
+
+    // Selection state (survive rotation)
+    val selection = SelectionState(savedStateHandle)
+    val fileAction = FileActionState(savedStateHandle)
+    val clipboard = ClipboardManager(savedStateHandle)
+
+    // Operation result manager (shared snackbar)
+    val resultManager = OperationResultManager()
 
     private val _uiState = MutableStateFlow(FavoritesUiState())
     val uiState: StateFlow<FavoritesUiState> = _uiState.asStateFlow()
@@ -32,6 +49,17 @@ class FavoritesViewModel(application: Application) : AndroidViewModel(applicatio
     init {
         observeFavorites()
         validateOnStart()
+        // Observe operation state from BaseFileOperationViewModel
+        viewModelScope.launch {
+            operationState.collect { state ->
+                _uiState.update { it.copy(operationState = state) }
+            }
+        }
+        viewModelScope.launch {
+            operationTitle.collect { title ->
+                _uiState.update { it.copy(operationTitle = title) }
+            }
+        }
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -63,17 +91,47 @@ class FavoritesViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // ══════════════════════════════════════════════════════════════
+    // File operations (Move/Copy/Compress) — dùng BaseFileOperationViewModel
+    // ══════════════════════════════════════════════════════════════
+
+    /** Copy files — delegate to BaseFileOperationViewModel.copyFiles() */
+    fun copyFiles(sourcePaths: List<String>, destDir: String) {
+        if (sourcePaths.isEmpty()) return
+        copyFiles(sourcePaths, destDir, null)
+    }
+
+    /** Move files — delegate to BaseFileOperationViewModel.moveFiles() */
+    fun moveFiles(sourcePaths: List<String>, destDir: String) {
+        if (sourcePaths.isEmpty()) return
+        moveFiles(sourcePaths, destDir, null)
+    }
+
+    /** Compress files — delegate to BaseFileOperationViewModel.compressFiles() */
+    fun compressFiles(sourcePaths: List<String>, zipName: String?) {
+        if (sourcePaths.isEmpty()) return
+        compressFiles(sourcePaths, zipName, null)
+    }
+
+    override fun onOperationDone(success: Int, failed: Int, actionName: String) {
+        // Favorites dùng Room Flow nên không cần reload thủ công
+        log.d("onOperationDone: $actionName success=$success failed=$failed")
+    }
+
+    fun clearOperationResult() {
+        resultManager.clearResult()
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // Delete — move selected favorites to trash
     // ══════════════════════════════════════════════════════════════
 
-    fun deleteFavorite(paths: List<String>) {
+    fun deleteSelected(paths: List<String>) {
         if (paths.isEmpty()) return
 
         viewModelScope.launch {
             _uiState.update { it.copy(isDeleting = true) }
 
             try {
-                // Xóa khỏi favorites trước
                 val removed = FavoriteManager.removeFavorites(context, paths)
 
                 // Scan parent dirs
@@ -82,7 +140,7 @@ class FavoritesViewModel(application: Application) : AndroidViewModel(applicatio
                     MediaStoreScanner.scanPaths(context, parentDirs)
                 }
 
-                log.d("deleteFavorite: paths=${paths.size}, removed=$removed")
+                log.d("deleteSelected: paths=${paths.size}, removed=$removed")
                 _uiState.update {
                     it.copy(
                         isDeleting = false,
@@ -90,7 +148,7 @@ class FavoritesViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                 }
             } catch (e: Exception) {
-                log.e("deleteFavorite: failed", e)
+                log.e("deleteSelected: failed", e)
                 _uiState.update {
                     it.copy(
                         isDeleting = false,
@@ -99,6 +157,11 @@ class FavoritesViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+    }
+
+    // Keep old method for backward compat (if any caller uses it)
+    fun deleteFavorite(paths: List<String>) {
+        deleteSelected(paths)
     }
 
     // ══════════════════════════════════════════════════════════════

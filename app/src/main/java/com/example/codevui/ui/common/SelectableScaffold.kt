@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,6 +54,7 @@ fun SelectableScaffold(
     onBack: () -> Unit,
     onSearchClick: () -> Unit = {},
     onTrashClick: () -> Unit = {},
+    onFavoritesClick: (() -> Unit)? = null,
     normalTopBar: (@Composable () -> Unit)? = null,
     snackbarHost: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit
@@ -75,7 +77,8 @@ fun SelectableScaffold(
                 normalTopBar?.invoke() ?: DefaultTopBar(
                     onBack = onBack,
                     onSearchClick = onSearchClick,
-                    onTrashClick = onTrashClick
+                    onTrashClick = onTrashClick,
+                    onFavoritesClick = onFavoritesClick
                 )
             }
         },
@@ -117,7 +120,8 @@ fun SelectableScaffold(
 fun DefaultTopBar(
     onBack: () -> Unit = {},
     onSearchClick: () -> Unit = {},
-    onTrashClick: () -> Unit = {}
+    onTrashClick: () -> Unit = {},
+    onFavoritesClick: (() -> Unit)? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     TopAppBar(
@@ -128,6 +132,15 @@ fun DefaultTopBar(
             }
         },
         actions = {
+            if (onFavoritesClick != null) {
+                IconButton(onClick = onFavoritesClick) {
+                    Icon(
+                        Icons.Outlined.Star,
+                        contentDescription = "Yêu thích",
+                        tint = Color(0xFFFFB300)
+                    )
+                }
+            }
             IconButton(onClick = onSearchClick) {
                 Icon(Icons.Default.Search, contentDescription = "Tìm kiếm")
             }

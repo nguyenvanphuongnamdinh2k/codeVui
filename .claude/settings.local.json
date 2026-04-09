@@ -50,7 +50,9 @@
       "Bash(git commit:*)",
       "Bash(git branch:*)",
       "Bash(git remote:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(grep -n \"FavoriteItem\\\\|data class Favorite\" \"C:/Users/phuong/Desktop/codeMyFiles/CodeVui/CodeVui/app/src/main/java/com/example/codevui/model/\"*.kt)",
+      "Bash(node:*)"
     ],
     "deny": [],
     "ask": []

@@ -117,14 +117,14 @@ abstract class BaseFileOperationViewModel(
 
     fun showOperationDialog() { _isDialogHidden.value = false }
 
-    fun cancelOperation() {
-        boundService?.cancelOperation()
-        unbindFromService()
+    fun dismissOperationResult() {
         _operationState.value = null
         _isDialogHidden.value = false
     }
 
-    fun dismissOperationResult() {
+    fun cancelOperation() {
+        boundService?.cancelOperation()
+        unbindFromService()
         _operationState.value = null
         _isDialogHidden.value = false
     }
@@ -134,7 +134,7 @@ abstract class BaseFileOperationViewModel(
         return s is ProgressState.Running || s is ProgressState.Counting
     }
 
-    // ── Override trong subclass nếu cần ──────────────────────────────────────
+    // ── Override trong subclass nếu cần ─────────────────────────────────────
 
     /**
      * Gọi sau khi operation Done — subclass override để reload data.
