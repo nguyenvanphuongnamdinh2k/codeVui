@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Shared team settings cho CodeVui. File này commit vào git. Personal overrides để ở settings.local.json (trong .gitignore).",
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew assembleDebug)",
+      "Bash(./gradlew assembleDebug --no-daemon)",
+      "Bash(./gradlew assembleDebug --quiet)",
+      "Bash(./gradlew clean)",
+      "Bash(./gradlew clean assembleDebug)",
+      "Bash(./gradlew installDebug)",
+      "Bash(./gradlew :app:compileDebugKotlin)",
+      "Bash(./gradlew :app:compileDebugKotlin --info)",
+      "Bash(./gradlew :app:kspDebugKotlin)",
+      "Bash(./gradlew :app:kspDebugKotlin --stacktrace)",
+      "Bash(./gradlew tasks)",
+      "Bash(./gradlew projects)",
+      "Bash(./gradlew dependencies)",
+      "Bash(gradlew.bat assembleDebug)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git push:*)",
+      "Bash(git remote:*)",
+      "Bash(git stash:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Skill(add-screen)",
+      "Skill(add-dialog)",
+      "Skill(add-file-operation)",
+      "Skill(add-thumbnail-fetcher)",
+      "Skill(logging)",
+      "Skill(mediastore)",
+      "Skill(auto-build)",
+      "Skill(task-tracking)",
+      "Skill(updating-claude)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(./gradlew publish:*)",
+      "Bash(adb uninstall:*)"
+    ],
+    "ask": [
+      "Bash(./gradlew :app:bundleRelease)",
+      "Bash(./gradlew :app:assembleRelease)"
+    ]
+  },
+  "env": {
+    "ANDROID_HOME_HINT": "Set ANDROID_HOME locally via local.properties",
+    "GRADLE_OPTS": "-Xmx4g -Dfile.encoding=UTF-8"
+  }
+}
