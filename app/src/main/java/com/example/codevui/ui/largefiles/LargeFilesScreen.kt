@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,9 +27,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.codevui.data.TrashManager
+import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.model.RecentFile
 import com.example.codevui.ui.common.dialogs.MoveToTrashDialog
+import com.example.codevui.ui.progress.OperationProgressDialog
 import com.example.codevui.ui.components.FileThumbnail
 import com.example.codevui.ui.selection.SelectionCheckbox
 import com.example.codevui.ui.selection.TriState
@@ -55,7 +57,12 @@ fun LargeFilesScreen(
     val selection = viewModel.selection
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val trashManager = remember { TrashManager(viewModel.getApplication()) }
+
+    // Operation state
+    val operationState by viewModel.operationState.collectAsState()
+    val operationTitle by viewModel.operationTitle.collectAsState()
+    val isDialogHidden by viewModel.isDialogHidden.collectAsState()
+    val isOperationRunning = operationState is ProgressState.Running || operationState is ProgressState.Counting
 
     // Dialog states
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -63,29 +70,14 @@ fun LargeFilesScreen(
     var showMenuDropdown by remember { mutableStateOf(false) }
     var showTypeFilterDropdown by remember { mutableStateOf(false) }
 
-    // ── Move to Trash confirm ──
+    // ── Move to Trash confirm — qua FileOperationService ──
     fun confirmDelete() {
         val selectedPaths = selection.selectedIds.toList()
         showDeleteDialog = false
         if (selectedPaths.isEmpty()) return
 
-        scope.launch {
-            try {
-                trashManager.moveToTrash(selectedPaths)
-                selection.exit()
-                viewModel.refresh()
-                snackbarHostState.showSnackbar(
-                    message = "Đã chuyển ${selectedPaths.size} file vào Thùng rác",
-                    duration = SnackbarDuration.Short
-                )
-            } catch (e: Exception) {
-                log.e("Failed to move to trash", e)
-                snackbarHostState.showSnackbar(
-                    message = "Lỗi: ${e.message}",
-                    duration = SnackbarDuration.Short
-                )
-            }
-        }
+        selection.exit()
+        viewModel.trashFiles(selectedPaths)
     }
 
     // ── Dialogs ──
@@ -94,6 +86,16 @@ fun LargeFilesScreen(
             itemCount = selection.selectedIds.size,
             onDismiss = { showDeleteDialog = false },
             onConfirm = { confirmDelete() }
+        )
+    }
+
+    // Progress dialog khi đang xóa file
+    if (isOperationRunning && !isDialogHidden && operationState != null) {
+        OperationProgressDialog(
+            title = operationTitle,
+            state = operationState!!,
+            onCancel = { viewModel.cancelOperation() },
+            onDismiss = { viewModel.hideOperationDialog() }
         )
     }
 
@@ -333,7 +335,7 @@ fun LargeFilesScreen(
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         uiState.groups.forEachIndexed { groupIndex, group ->
                             // Group header
-                            item(key = "header_$groupIndex") {
+                            item(key = "header_${group.label}") {
                                 Text(
                                     text = group.label,
                                     modifier = Modifier
@@ -346,26 +348,27 @@ fun LargeFilesScreen(
                             }
 
                             // File items
-                            itemsIndexed(
+                            items(
                                 items = group.files,
-                                key = { _, file -> file.path }
-                            ) { itemIndex, file ->
+                                key = { file -> file.path }
+                            ) { file ->
                                 LargeFileItem(
                                     file = file,
                                     selection = viewModel.selection,
                                     onFileClick = onFileClick
                                 )
-                                if (itemIndex < group.files.lastIndex) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(start = 84.dp),
-                                        color = Color(0xFFF0F0F0),
-                                        thickness = 1.dp
-                                    )
+                            }
+
+                            if (groupIndex < uiState.groups.lastIndex) {
+                                item(key = "spacer_${group.label}") {
+                                    Spacer(modifier = Modifier.height(8.dp))
                                 }
                             }
                         }
                         // Bottom spacer
-                        item { Spacer(Modifier.height(80.dp)) }
+                        item(key = "bottom_spacer") {
+                            Spacer(Modifier.height(80.dp))
+                        }
                     }
                 }
             }

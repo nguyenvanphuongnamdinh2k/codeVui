@@ -44,6 +44,15 @@ class DialogManager {
     }
 
     /**
+     * Show batch rename dialog (nhiều file cùng lúc)
+     */
+    fun showBatchRename(items: List<RenameItem>, onConfirm: (Map<String, String>) -> Unit) {
+        dialogType = DialogType.BATCH_RENAME
+        dialogData = items
+        dialogCallback = { result -> onConfirm(result as Map<String, String>) }
+    }
+
+    /**
      * Show details dialog
      */
     fun showDetails(paths: List<String>) {
@@ -139,6 +148,7 @@ class DialogManager {
  */
 enum class DialogType {
     RENAME,
+    BATCH_RENAME,
     DETAILS,
     COMPRESS,
     EXTRACT,
@@ -167,6 +177,16 @@ fun DialogHandler(manager: DialogManager) {
                 currentName = currentName,
                 onDismiss = { manager.dismiss() },
                 onConfirm = { newName -> manager.confirm(newName) }
+            )
+        }
+
+        DialogType.BATCH_RENAME -> {
+            @Suppress("UNCHECKED_CAST")
+            val items = manager.getData<List<RenameItem>>() ?: return
+            BatchRenameDialog(
+                items = items,
+                onDismiss = { manager.dismiss() },
+                onConfirm = { result -> manager.confirm(result) }
             )
         }
 

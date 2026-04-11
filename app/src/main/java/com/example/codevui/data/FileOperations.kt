@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.example.codevui.model.ArchiveEntry
+import net.lingala.zip4j.ZipFile
+import net.lingala.zip4j.exception.ZipException
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
@@ -39,6 +42,44 @@ object FileOperations {
     private const val BUFFER_SIZE = 65536 // 64KB buffer cho performance tốt hơn
 
     enum class OperationType { COPY, MOVE }
+
+    /**
+     * Move files to trash (delete) — emit progress qua Flow<ProgressState>.
+     * Chạy qua FileOperationService để có progress bar + notification.
+     */
+    fun trashFiles(context: android.content.Context, paths: List<String>): kotlinx.coroutines.flow.Flow<ProgressState> = flow {
+        emit(ProgressState.Counting)
+
+        if (paths.isEmpty()) {
+            emit(ProgressState.Error("Không có file nào để xóa"))
+            return@flow
+        }
+
+        val trashManager = TrashManager(context)
+        val total = paths.size
+
+        emit(ProgressState.Running(
+            currentFile = "Đang xóa...",
+            done = 0,
+            total = total,
+            percent = 0
+        ))
+
+        try {
+            val (success, failed) = trashManager.moveToTrash(paths)
+            val doneCount = success
+            emit(ProgressState.Running(
+                currentFile = "Hoàn tất",
+                done = doneCount,
+                total = total,
+                percent = 100
+            ))
+            emit(ProgressState.Done(success = doneCount, failed = failed))
+        } catch (e: Exception) {
+            Log.e(TAG, "trashFiles failed", e)
+            emit(ProgressState.Error(e.message ?: "Lỗi khi xóa file"))
+        }
+    }.flowOn(Dispatchers.IO)
 
     // ─── Progress State ───────────────────────────────────────────────────────
 
@@ -203,6 +244,167 @@ object FileOperations {
             Log.e(TAG, "Compress failed", e)
             zipFile.delete()
             emit(ProgressState.Error(e.message ?: "Lỗi không xác định khi nén"))
+        }
+
+    }.flowOn(Dispatchers.IO)
+
+    // ─── Extract Archive ─────────────────────────────────────────────────────
+
+    /**
+     * Giải nén các entries đã chọn từ archive, emit progress byte-level.
+     * Chạy qua FileOperationService — giống copy/move/compress.
+     *
+     * @param archivePath đường dẫn file archive
+     * @param entryPaths danh sách entry paths cần giải nén
+     * @param destPath folder đích
+     * @param allEntries tất cả entries trong archive (để resolve folders)
+     * @param password mật khẩu (optional)
+     */
+    fun extractArchive(
+        archivePath: String,
+        entryPaths: List<String>,
+        destPath: String,
+        allEntries: List<ArchiveEntry>,
+        password: String? = null
+    ): Flow<ProgressState> = flow {
+
+        emit(ProgressState.Counting)
+
+        val archiveFile = File(archivePath)
+        if (!archiveFile.exists()) {
+            emit(ProgressState.Error("File nén không tồn tại"))
+            return@flow
+        }
+
+        val destDir = File(destPath)
+        if (!destDir.exists()) destDir.mkdirs()
+
+        // ── Resolve selected folders → tất cả file entries cần extract ──
+        val selectedFolders = mutableSetOf<String>()
+        val selectedFiles = mutableSetOf<String>()
+
+        for (path in entryPaths) {
+            if (path.endsWith("/")) {
+                selectedFolders.add(path)
+            } else {
+                selectedFiles.add(path)
+                val asFolder = "$path/"
+                val hasChildren = allEntries.any { it.path.startsWith(asFolder) }
+                if (hasChildren) selectedFolders.add(asFolder)
+            }
+        }
+
+        // Nếu folder có children explicit selected → không expand folder
+        val foldersToRemove = mutableSetOf<String>()
+        for (folder in selectedFolders) {
+            if (selectedFiles.any { it.startsWith(folder) }) {
+                foldersToRemove.add(folder)
+            }
+        }
+        selectedFolders.removeAll(foldersToRemove)
+
+        val pathsToExtract = mutableSetOf<String>()
+        pathsToExtract.addAll(selectedFiles)
+        for (folder in selectedFolders) {
+            pathsToExtract.add(folder)
+            allEntries.filter { it.path.startsWith(folder) && it.path != folder }
+                .forEach { pathsToExtract.add(it.path) }
+        }
+
+        // Tính totalSize cho byte-level progress
+        val filePathsToExtract = pathsToExtract.filter { !it.endsWith("/") }
+        val totalSize = filePathsToExtract.sumOf { path ->
+            allEntries.find { it.path == path }?.size ?: 0L
+        }
+        val total = filePathsToExtract.size
+        if (total == 0) {
+            emit(ProgressState.Done(success = 0, failed = 0))
+            return@flow
+        }
+
+        var success = 0
+        var failed = 0
+        var handledBytes = 0L
+
+        try {
+            val zipFile = ZipFile(archiveFile)
+
+            if (zipFile.isEncrypted) {
+                if (password == null) {
+                    emit(ProgressState.Error("File nén được bảo vệ bằng mật khẩu"))
+                    return@flow
+                }
+                zipFile.setPassword(password.toCharArray())
+            }
+
+            for (entryPath in pathsToExtract) {
+                val ctx = currentCoroutineContext()
+                if (!ctx.isActive) break
+
+                try {
+                    val fileHeader = zipFile.getFileHeader(entryPath) ?: continue
+
+                    if (fileHeader.isDirectory) {
+                        File(destDir, entryPath).mkdirs()
+                        continue
+                    }
+
+                    // Extract file với byte-level progress
+                    val outputFile = File(destDir, entryPath)
+                    outputFile.parentFile?.mkdirs()
+
+                    val entrySize = fileHeader.uncompressedSize.coerceAtLeast(0)
+
+                    zipFile.getInputStream(fileHeader).use { input ->
+                        FileOutputStream(outputFile).use { output ->
+                            val buffer = ByteArray(BUFFER_SIZE)
+                            var bytesRead: Int
+                            while (input.read(buffer).also { bytesRead = it } != -1) {
+                                if (!ctx.isActive) return@flow
+                                output.write(buffer, 0, bytesRead)
+                                handledBytes += bytesRead
+                            }
+                        }
+                    }
+
+                    success++
+                    val percent = if (totalSize > 0) {
+                        (handledBytes * 100 / totalSize).toInt().coerceIn(0, 100)
+                    } else {
+                        (success * 100 / total).coerceIn(0, 100)
+                    }
+
+                    emit(ProgressState.Running(
+                        currentFile = outputFile.name,
+                        done = success,
+                        total = total,
+                        percent = percent
+                    ))
+
+                } catch (e: ZipException) {
+                    if (e.message?.contains("Wrong Password", ignoreCase = true) == true) {
+                        emit(ProgressState.Error("Sai mật khẩu"))
+                        return@flow
+                    }
+                    Log.e(TAG, "Extract failed: $entryPath", e)
+                    failed++
+                } catch (e: Exception) {
+                    Log.e(TAG, "Extract failed: $entryPath", e)
+                    failed++
+                }
+            }
+
+            emit(ProgressState.Done(success = success, failed = failed))
+
+        } catch (e: ZipException) {
+            if (e.message?.contains("Wrong Password", ignoreCase = true) == true) {
+                emit(ProgressState.Error("Sai mật khẩu"))
+            } else {
+                emit(ProgressState.Error(e.message ?: "Lỗi giải nén"))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Extract archive failed", e)
+            emit(ProgressState.Error(e.message ?: "Lỗi giải nén không xác định"))
         }
 
     }.flowOn(Dispatchers.IO)

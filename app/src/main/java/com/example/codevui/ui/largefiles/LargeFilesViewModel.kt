@@ -1,12 +1,12 @@
 package com.example.codevui.ui.largefiles
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.example.codevui.data.FileRepository
 import com.example.codevui.model.FileType
 import com.example.codevui.model.RecentFile
+import com.example.codevui.ui.common.BaseMediaStoreViewModel
 import com.example.codevui.ui.selection.SelectionState
 import com.example.codevui.util.Logger
 import kotlinx.coroutines.Dispatchers
@@ -20,8 +20,8 @@ private val log = Logger("LargeFilesVM")
 
 class LargeFilesViewModel(
     application: Application,
-    private val savedStateHandle: SavedStateHandle
-) : AndroidViewModel(application) {
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle()
+) : BaseMediaStoreViewModel(application) {
 
     private val repository = FileRepository(application)
 
@@ -31,10 +31,10 @@ class LargeFilesViewModel(
     val selection = SelectionState(savedStateHandle)
 
     init {
-        loadLargeFiles()
+        reload()
     }
 
-    fun loadLargeFiles() {
+    override fun reload() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
@@ -43,12 +43,16 @@ class LargeFilesViewModel(
 
                 val allFiles = repository.findLargeFiles(threshold)
                 val filtered = applyTypeFilter(allFiles, _uiState.value.typeFilter)
-                val groups = groupBySize(filtered, threshold)
+                val newGroups = groupBySize(filtered, threshold)
+
+                // Smart diff: giữ nguyên object reference cho groups không đổi
+                val currentGroups = _uiState.value.groups
+                val diffedGroups = diffGroups(currentGroups, newGroups)
 
                 _uiState.update {
                     it.copy(
                         allFiles = allFiles,
-                        groups = groups,
+                        groups = diffedGroups,
                         isLoading = false,
                         totalFiles = filtered.size,
                         totalSize = filtered.sumOf { f -> f.size },
@@ -68,18 +72,44 @@ class LargeFilesViewModel(
         }
     }
 
+    /**
+     * Diff 2 danh sách groups — giữ nguyên object reference cho groups không đổi.
+     * Key = label (vì group by size range, label là unique identifier).
+     */
+    private fun diffGroups(
+        current: List<SizeGroup>,
+        new: List<SizeGroup>
+    ): List<SizeGroup> {
+        if (current.isEmpty()) return new
+
+        val currentByLabel = current.associateBy { it.label }
+        val result = mutableListOf<SizeGroup>()
+
+        for (ng in new) {
+            val existing = currentByLabel[ng.label]
+            if (existing != null && existing == ng) {
+                // Group không đổi → giữ nguyên reference
+                result.add(existing)
+            } else {
+                // Group mới hoặc thay đổi → dùng new
+                result.add(ng)
+            }
+        }
+        return result
+    }
+
     // ── Threshold ────────────────────────────────────────
 
     fun setSizeThreshold(threshold: SizeThreshold) {
         _uiState.update { it.copy(sizeThreshold = threshold) }
         if (threshold != SizeThreshold.CUSTOM) {
-            loadLargeFiles()
+            reload()
         }
     }
 
     fun setCustomThreshold(bytes: Long) {
         _uiState.update { it.copy(customThresholdBytes = bytes, sizeThreshold = SizeThreshold.CUSTOM) }
-        loadLargeFiles()
+        reload()
     }
 
     // ── Type filter ─────────────────────────────────────
@@ -103,7 +133,12 @@ class LargeFilesViewModel(
     }
 
     fun refresh() {
-        loadLargeFiles()
+        reload()
+    }
+
+    override fun onOperationDone(success: Int, failed: Int, actionName: String) {
+        // Operation done → reload large files list
+        reload()
     }
 
     // ── Internal ────────────────────────────────────────

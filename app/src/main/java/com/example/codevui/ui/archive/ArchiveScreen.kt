@@ -33,8 +33,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.codevui.data.FileOperations
+import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.data.FileRepository
 import com.example.codevui.ui.common.SelectableScaffold
 import com.example.codevui.ui.common.dialogs.DialogHandler
@@ -44,6 +46,7 @@ import com.example.codevui.ui.common.viewmodel.OperationResultSnackbar
 import com.example.codevui.ui.components.ArchiveEntryItem
 import com.example.codevui.ui.components.SortBar
 import com.example.codevui.ui.selection.FileActionState
+import com.example.codevui.ui.progress.OperationProgressDialog
 import com.example.codevui.ui.selection.FolderPickerSheet
 import com.example.codevui.ui.selection.selectionActionHandler
 import com.example.codevui.util.Logger
@@ -66,6 +69,12 @@ fun ArchiveScreen(
     val selection = viewModel.selection
     val snackbarHostState = remember { SnackbarHostState() }
     val extractResult by viewModel.extractResult.collectAsState()
+
+    // Service-based operation progress (extract/move qua ForegroundService)
+    val operationState by viewModel.operationState.collectAsState()
+    val operationTitle by viewModel.operationTitle.collectAsState()
+    val isDialogHidden by viewModel.isDialogHidden.collectAsState()
+
     val fileActionState = remember { FileActionState(androidx.lifecycle.SavedStateHandle()) }
     val dialogManager = rememberDialogManager()
 
@@ -395,13 +404,48 @@ fun ArchiveScreen(
         )
     }
 
-    // ── Operation Progress Dialog ────────────────────────────────────────
-    if (uiState.isOperating) {
+    // ── Operation Progress Dialog (Samsung My Files style) ──────────────
+    // Extract/Move qua service → dùng shared OperationProgressDialog
+    val currentOpState = operationState
+    if (currentOpState != null && !isDialogHidden) {
         OperationProgressDialog(
-            operationType = uiState.operationType,
-            progress = uiState.operationProgress,
-            total = uiState.operationTotal
+            title = operationTitle,
+            state = currentOpState,
+            onCancel = { viewModel.cancelOperation() },
+            onDismiss = { viewModel.hideOperationDialog() }
         )
+    }
+    // Delete (in-place, nhanh) → hiện simple loading dialog
+    if (uiState.isOperating && currentOpState == null) {
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = uiState.operationType,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    CircularProgressIndicator(modifier = Modifier.size(40.dp), strokeWidth = 3.dp)
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "Đang xử lý ${uiState.operationProgress}/${uiState.operationTotal} mục...",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 
     // ── Dialog Handler — Render all dialogs for preview mode ─────────────

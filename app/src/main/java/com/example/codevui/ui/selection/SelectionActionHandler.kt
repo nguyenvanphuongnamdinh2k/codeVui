@@ -18,6 +18,7 @@ import androidx.core.content.FileProvider
 import com.example.codevui.data.FavoriteManager
 import com.example.codevui.data.FileOperations
 import com.example.codevui.data.TrashManager
+import com.example.codevui.ui.common.dialogs.RenameItem
 import com.example.codevui.ui.clipboard.ClipboardManager as FileClipboardManager
 import com.example.codevui.ui.common.dialogs.ConflictDialog
 import com.example.codevui.ui.common.dialogs.DialogHandler
@@ -38,6 +39,7 @@ fun selectionActionHandler(
     fileClipboard: FileClipboardManager? = null,
     currentPath: String = "",
     onOperationComplete: () -> Unit = {},
+    onRenameComplete: (renamedPath: String, newName: String) -> Unit = { _, _ -> },
     onCopyFiles: (
         sourcePaths: List<String>,
         destDir: String,
@@ -325,26 +327,37 @@ fun selectionActionHandler(
             },
             onRename = {
                 val paths = selectedPaths()
-                if (paths.size == 1) {
-                    val currentName = File(paths.first()).name
-                    dialogManager.showRename(currentName) { newName ->
-                        scope.launch {
-                            val success = withContext(Dispatchers.IO) {
-                                val file = File(paths.first())
-                                val dest = File(file.parent, newName)
+                val items = paths.map { path ->
+                    RenameItem(path = path, originalName = File(path).name)
+                }
+                dialogManager.showBatchRename(items) { results ->
+                    scope.launch {
+                        var successCount = 0
+                        var failCount = 0
+                        results.forEach { (path, newName) ->
+                            val file = File(path)
+                            val dest = File(file.parent, newName)
+                            val ok = withContext(Dispatchers.IO) {
                                 if (!dest.exists()) file.renameTo(dest) else false
                             }
-                            Toast.makeText(
-                                context,
-                                if (success) "Đã đổi tên thành $newName" else "Đổi tên thất bại",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            selectionState.exit()
+                            if (ok) successCount++ else failCount++
+                        }
+                        val msg = when {
+                            failCount == 0 -> "Đã đổi tên $successCount mục"
+                            successCount == 0 -> "Đổi tên thất bại"
+                            else -> "Đổi tên $successCount mục, thất bại $failCount"
+                        }
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        selectionState.exit()
+                        if (successCount > 0) {
+                            // Notify first renamed item for scroll/highlight
+                            results.entries.firstOrNull { it.value.isNotEmpty() }?.let { (path, _) ->
+                                onRenameComplete(path, File(path).name)
+                            }
+                        } else {
                             onOperationComplete()
                         }
                     }
-                } else {
-                    Toast.makeText(context, "Chỉ có thể đổi tên 1 mục", Toast.LENGTH_SHORT).show()
                 }
             },
             onCompress = if (!hasArchiveFiles) {

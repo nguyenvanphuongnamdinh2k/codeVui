@@ -29,7 +29,10 @@ data class SizeGroup(
     val label: String,        // "Hơn 400 MB", "Hơn 100 MB", ...
     val minBytes: Long,       // threshold tối thiểu
     val files: List<RecentFile>
-)
+) {
+    /** Stable identity key cho diff — không thay đổi khi files list reference thay đổi */
+    val id: String get() = label
+}
 
 data class LargeFilesUiState(
     val groups: List<SizeGroup> = emptyList(),

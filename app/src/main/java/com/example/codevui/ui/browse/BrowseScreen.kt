@@ -8,8 +8,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.codevui.data.FavoriteManager
+import com.example.codevui.data.FileOperations.OperationType
 import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.model.FolderItem
 import com.example.codevui.model.RecentFile
@@ -125,6 +126,7 @@ fun BrowseScreen(
         fileClipboard = viewModel.clipboard,
         currentPath = uiState.currentPath,
         onOperationComplete = { viewModel.reload() },
+        onRenameComplete = { renamedPath, _ -> viewModel.setRenamedItemPath(renamedPath) },
         onCopyFiles = { paths, dest, resolvedPath ->
             viewModel.copyFiles(paths, dest, resolvedPath)
         },
@@ -401,6 +403,27 @@ fun BrowseScreen(
                 LaunchedEffect(uiState.sortBy, uiState.ascending) {
                     listState.scrollToItem(0)
                 }
+
+                // Scroll tới item vừa rename + highlight
+                val renamedPath = uiState.renamedItemPath
+                LaunchedEffect(renamedPath) {
+                    if (renamedPath == null) return@LaunchedEffect
+                    // Tính index của item trong list (folders trước, rồi files)
+                    val pinned = uiState.folders.filter { it.isPinned }
+                    val normal = uiState.folders.filter { !it.isPinned }
+                    val allFolders = pinned + normal
+                    val index = allFolders.indexOfFirst { it.path == renamedPath }
+                        .takeIf { it >= 0 }
+                        ?: run {
+                            // Không phải folder → tìm trong files
+                            uiState.files.indexOfFirst { it.path == renamedPath }
+                                .takeIf { it >= 0 }?.let { allFolders.size + 1 + it }
+                        }
+                    if (index != null && index >= 0) {
+                        listState.animateScrollToItem(index)
+                    }
+                }
+
                 AnimatedVisibility(visible = showSortBar, enter = fadeIn(), exit = fadeOut()) {
                     SortBar(
                         sortBy = uiState.sortBy,
@@ -517,46 +540,54 @@ fun BrowseScreen(
     }
 
     // ── Paste Conflict Dialog (từ menu Dán) ─────────────────────────────
-    if (showPasteConflictDialog && pasteConflictData != null) {
-        val data = pasteConflictData!!
-        log.d("=== Paste ConflictDialog rendered ===")
-        log.d("Operation: ${data.operation}")
-        log.d("Conflict count: ${data.conflictCount}")
-        log.d("DestPath: ${data.destPath}")
-
-        ConflictDialog(
-            conflictCount = data.conflictCount,
-            operationName = "dán",
+    // Capture local val để tránh smart cast issue với delegated property
+    val conflictDataSnapshot = pasteConflictData
+    if (showPasteConflictDialog && conflictDataSnapshot != null) {
+        PasteConflictDialogContent(
+            conflictData = conflictDataSnapshot,
             onDismiss = {
                 log.d("User chose: Thoát (cancel paste)")
                 log.d("Clipboard retained — user can retry later")
                 showPasteConflictDialog = false
                 pasteConflictData = null
             },
-            onReplace = {
+            onReplace = { sources, dest, op ->
                 log.d("User chose: Thay thế (replace)")
                 showPasteConflictDialog = false
                 pasteConflictData = null
-                viewModel.executePaste(
-                    data.sourcePaths,
-                    data.destPath,
-                    data.operation,
-                    replaceConflicts = true
-                )
+                viewModel.executePaste(sources, dest, op, replaceConflicts = true)
             },
-            onRename = {
+            onRename = { sources, dest, op ->
                 log.d("User chose: Đổi tên (auto-rename)")
                 showPasteConflictDialog = false
                 pasteConflictData = null
-                viewModel.executePaste(
-                    data.sourcePaths,
-                    data.destPath,
-                    data.operation,
-                    replaceConflicts = false
-                )
+                viewModel.executePaste(sources, dest, op, replaceConflicts = false)
             }
         )
     }
+}
+
+// ── Paste Conflict Dialog Content ──────────────────────────────────────────────
+
+@Composable
+private fun PasteConflictDialogContent(
+    conflictData: PasteData,
+    onDismiss: () -> Unit,
+    onReplace: (List<String>, String, com.example.codevui.data.FileOperations.OperationType) -> Unit,
+    onRename: (List<String>, String, com.example.codevui.data.FileOperations.OperationType) -> Unit
+) {
+    log.d("=== PasteConflictDialogContent rendered ===")
+    log.d("Operation: ${conflictData.operation}")
+    log.d("Conflict count: ${conflictData.conflictCount}")
+    log.d("DestPath: ${conflictData.destPath}")
+
+    ConflictDialog(
+        conflictCount = conflictData.conflictCount,
+        operationName = "dán",
+        onDismiss = onDismiss,
+        onReplace = { onReplace(conflictData.sourcePaths, conflictData.destPath, conflictData.operation) },
+        onRename = { onRename(conflictData.sourcePaths, conflictData.destPath, conflictData.operation) }
+    )
 }
 
 // ── Portrait List ─────────────────────────────────────────────────────────────

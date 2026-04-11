@@ -17,5 +17,7 @@ data class BrowseUiState(
     // Column View state (landscape)
     val columns: List<ColumnData> = emptyList(),
     // Filter: true = "Cần thiết" (essential folders only), false = "Tất cả"
-    val showEssentialOnly: Boolean = false
+    val showEssentialOnly: Boolean = false,
+    // Path của item vừa được rename — dùng để scroll + highlight
+    val renamedItemPath: String? = null
 )

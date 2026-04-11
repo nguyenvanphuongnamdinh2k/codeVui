@@ -122,6 +122,18 @@ class BrowseViewModel(
         loadDirectory(targetPath, segments, stack)
     }
 
+    /**
+     * Set path của item vừa được rename — BrowseScreen sẽ scroll tới và highlight item đó.
+     * Tự động clear sau 2.5 giây để bỏ highlight.
+     */
+    fun setRenamedItemPath(renamedPath: String) {
+        _uiState.update { it.copy(renamedItemPath = renamedPath) }
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(2500)
+            _uiState.update { it.copy(renamedItemPath = null) }
+        }
+    }
+
     fun onColumnFolderClick(columnIndex: Int, folder: FolderItem) {
         viewModelScope.launch(Dispatchers.IO) {
             val (subFolders, subFiles) = repository.listDirectory(folder.path, _uiState.value.sortBy, _uiState.value.ascending)
@@ -283,22 +295,15 @@ class BrowseViewModel(
                 // Read all entries from archive
                 val allEntries = ArchiveReader.readEntries(archivePath, password)
 
-                // Extract all entries
-                val (success, failed) = ArchiveReader.extractEntries(
+                // Chạy qua ForegroundService — có byte-level progress + notification + WakeLock
+                lastOperationDestPath = destPath
+                extractFiles(
                     archivePath = archivePath,
                     entryPaths = allEntries.map { it.path },
                     destPath = destPath,
                     allEntries = allEntries,
                     password = password
                 )
-
-                // Set result for snackbar (using shared component)
-                lastOperationDestPath = destPath
-                resultManager.setResult(destPath, success, failed, "Giải nén")
-
-                // Clear cache and reload
-                directoryCache.evictAll()
-                reload()
             } catch (e: ArchiveReader.PasswordRequiredException) {
                 // Notify UI to show password dialog
                 withContext(Dispatchers.Main) {

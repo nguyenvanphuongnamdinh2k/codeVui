@@ -15,6 +15,8 @@
     <!-- ForegroundService permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <!-- Wake lock cho FileOperationService giữ CPU thức khi đang copy/move/compress -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Android 13+ cần xin runtime permission để post notification -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 

@@ -52,7 +52,20 @@
       "Bash(git remote:*)",
       "Bash(git push:*)",
       "Bash(grep -n \"FavoriteItem\\\\|data class Favorite\" \"C:/Users/phuong/Desktop/codeMyFiles/CodeVui/CodeVui/app/src/main/java/com/example/codevui/model/\"*.kt)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(.\\\\gradlew.bat assembleDebug)",
+      "Bash(cmd /c \"gradlew.bat assembleDebug 2>&1\")",
+      "Bash(cmd /c \"cd /d C:\\\\Users\\\\phuong\\\\Desktop\\\\codeMyFiles\\\\CodeVui\\\\CodeVui && gradlew.bat assembleDebug 2>&1\")",
+      "Bash(\"C:\\\\Users\\\\phuong\\\\Desktop\\\\codeMyFiles\\\\CodeVui\\\\CodeVui\\\\gradlew.bat\" -p \"C:\\\\Users\\\\phuong\\\\Desktop\\\\codeMyFiles\\\\CodeVui\\\\CodeVui\" assembleDebug)",
+      "Bash(grep -n \"fun BrowseScreen\\\\|^\\\\}\\\\$\" \"C:\\\\Users\\\\phuong\\\\Desktop\\\\codeMyFiles\\\\CodeVui\\\\CodeVui\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\codevui\\\\ui\\\\browse\\\\BrowseScreen.kt\")",
+      "Bash(awk NR>=575 && NR<=595:*)",
+      "Bash(awk NR>=578 && NR<=592:*)",
+      "Bash(awk NR>=568 && NR<=584:*)",
+      "Bash(awk NR>=588 && NR<=610:*)",
+      "Bash(awk 'NR>=540 && NR<=595' \"C:\\\\Users\\\\phuong\\\\Desktop\\\\codeMyFiles\\\\CodeVui\\\\CodeVui\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\codevui\\\\ui\\\\browse\\\\BrowseScreen.kt\")",
+      "Bash(xxd \"C:\\\\Users\\\\phuong\\\\Desktop\\\\codeMyFiles\\\\CodeVui\\\\CodeVui\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\codevui\\\\ui\\\\browse\\\\BrowseScreen.kt\")",
+      "Bash(\"C:\\\\Users\\\\phuong\\\\Desktop\\\\codeMyFiles\\\\CodeVui\\\\CodeVui\\\\gradlew.bat\" -p \"C:\\\\Users\\\\phuong\\\\Desktop\\\\codeMyFiles\\\\CodeVui\\\\CodeVui\" clean assembleDebug)",
+      "Bash(awk NR>=550 && NR<=568 { printf \"%d: %s\\\\n\", NR, $0 }:*)"
     ],
     "deny": [],
     "ask": []

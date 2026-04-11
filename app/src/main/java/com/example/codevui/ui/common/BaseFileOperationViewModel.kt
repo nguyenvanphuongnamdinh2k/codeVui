@@ -9,26 +9,41 @@ import android.os.IBinder
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.codevui.data.FileOperations.ProgressState
+import com.example.codevui.model.ArchiveEntry
 import com.example.codevui.service.FileOperationService
+import com.example.codevui.service.OperationInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Base ViewModel chứa toàn bộ logic bind FileOperationService.
- * Các ViewModel cần copy/move/zip chỉ cần extend class này.
+ * Base ViewModel hỗ trợ multi-operation qua FileOperationService.
+ *
+ * Thay đổi so với bản cũ:
+ * - operationsMap thay cho single operationState (multi-operation)
+ * - Mỗi operation có ID riêng, theo dõi độc lập
+ * - Giữ backward-compatible: operationState/operationTitle vẫn trỏ tới operation mới nhất
  *
  * Usage:
  *   class BrowseViewModel(app, ssh) : BaseFileOperationViewModel(app) { ... }
- *   class RecentFilesViewModel(app, ssh) : BaseFileOperationViewModel(app) { ... }
  */
 abstract class BaseFileOperationViewModel(
     application: Application
 ) : AndroidViewModel(application) {
 
-    // ── State expose ra ngoài ─────────────────────────────────────────────────
+    // ── Multi-operation state ─────────────────────────────────────────────────
 
+    /**
+     * Map of operationId → OperationInfo — theo dõi tất cả operation đang/đã chạy.
+     * UI observe flow này để hiển thị progress cho từng operation.
+     */
+    private val _operationsMap = MutableStateFlow<Map<Int, OperationInfo>>(emptyMap())
+    val operationsMap: StateFlow<Map<Int, OperationInfo>> = _operationsMap.asStateFlow()
+
+    // ── Backward-compatible state (latest operation) ─────────────────────────
+
+    /** State của operation mới nhất — backward-compatible cho code cũ */
     private val _operationState = MutableStateFlow<ProgressState?>(null)
     val operationState: StateFlow<ProgressState?> = _operationState.asStateFlow()
 
@@ -38,35 +53,68 @@ abstract class BaseFileOperationViewModel(
     private val _isDialogHidden = MutableStateFlow(false)
     val isDialogHidden: StateFlow<Boolean> = _isDialogHidden.asStateFlow()
 
+    /** Operation ID đang được hiển thị trong dialog (operation mới nhất) */
+    private var activeOperationId: Int = -1
+
     // Destination path để hiển thị Snackbar sau khi hoàn thành
     protected var lastOperationDestPath: String? = null
 
     // ── Service binding ───────────────────────────────────────────────────────
 
     private var boundService: FileOperationService? = null
+    private var isBound = false
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             val service = (binder as FileOperationService.LocalBinder).getService()
             boundService = service
 
+            // Observe tất cả operations từ service
             viewModelScope.launch {
-                service.operationTitle.collect { _operationTitle.value = it }
-            }
-            viewModelScope.launch {
-                service.operationState.collect { state ->
-                    _operationState.value = state
-                    when (state) {
-                        is ProgressState.Done -> {
-                            // Callback với thông tin kết quả
-                            val actionName = extractActionName(_operationTitle.value)
-                            onOperationDone(state.success, state.failed, actionName)
+                service.operationsMap.collect { opsMap ->
+                    _operationsMap.value = opsMap
+
+                    // Cập nhật backward-compatible state cho active operation
+                    val activeOp = opsMap[activeOperationId]
+                    if (activeOp != null) {
+                        _operationState.value = activeOp.state
+                        _operationTitle.value = activeOp.title
+
+                        when (activeOp.state) {
+                            is ProgressState.Done -> {
+                                onOperationDone(
+                                    activeOp.state.success,
+                                    activeOp.state.failed,
+                                    activeOp.actionName
+                                )
+                                // Clear operation từ service sau khi xử lý
+                                service.clearOperation(activeOperationId)
+                            }
+                            is ProgressState.Error -> {
+                                service.clearOperation(activeOperationId)
+                            }
+                            else -> {}
                         }
-                        is ProgressState.Error -> {
-                            // Không hiển thị Toast, để UI xử lý
+                    }
+
+                    // Kiểm tra các operation khác đã Done (multi-op)
+                    for ((opId, info) in opsMap) {
+                        if (opId == activeOperationId) continue
+                        when (info.state) {
+                            is ProgressState.Done -> {
+                                onOperationDone(info.state.success, info.state.failed, info.actionName)
+                                service.clearOperation(opId)
+                            }
+                            is ProgressState.Error -> {
+                                service.clearOperation(opId)
+                            }
+                            else -> {}
                         }
-                        null -> unbindFromService()
-                        else -> {}
+                    }
+
+                    // Nếu không còn operation nào → unbind
+                    if (opsMap.isEmpty() && !service.isRunning()) {
+                        unbindFromService()
                     }
                 }
             }
@@ -74,43 +122,82 @@ abstract class BaseFileOperationViewModel(
 
         override fun onServiceDisconnected(name: ComponentName) {
             boundService = null
+            isBound = false
         }
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
-     * Copy files to destination.
-     * @param resolvedDestPath Optional: resolved file path when rename conflict was pre-resolved
-     *                          (used for snackbar navigation to the actual renamed file)
+     * Copy files to destination. Trả về operationId.
      */
-    fun copyFiles(sourcePaths: List<String>, destDir: String, resolvedDestPath: String? = null) {
+    fun copyFiles(sourcePaths: List<String>, destDir: String, resolvedDestPath: String? = null): Int {
         _isDialogHidden.value = false
         lastOperationDestPath = resolvedDestPath ?: destDir
-        FileOperationService.startCopy(getApplication(), sourcePaths, destDir)
+        val opId = FileOperationService.startCopy(getApplication(), sourcePaths, destDir)
+        activeOperationId = opId
         bindToService()
+        return opId
     }
 
     /**
-     * Move files to destination.
-     * @param resolvedDestPath Optional: resolved file path when rename conflict was pre-resolved
-     *                          (used for snackbar navigation to the actual renamed file)
+     * Move files to destination. Trả về operationId.
      */
-    fun moveFiles(sourcePaths: List<String>, destDir: String, resolvedDestPath: String? = null) {
+    fun moveFiles(sourcePaths: List<String>, destDir: String, resolvedDestPath: String? = null): Int {
         _isDialogHidden.value = false
         lastOperationDestPath = resolvedDestPath ?: destDir
-        FileOperationService.startMove(getApplication(), sourcePaths, destDir)
+        val opId = FileOperationService.startMove(getApplication(), sourcePaths, destDir)
+        activeOperationId = opId
         bindToService()
+        return opId
     }
 
-    fun compressFiles(sourcePaths: List<String>, customName: String? = null, resolvedDestPath: String? = null) {
+    /**
+     * Compress files. Trả về operationId.
+     */
+    fun compressFiles(sourcePaths: List<String>, customName: String? = null, resolvedDestPath: String? = null): Int {
         _isDialogHidden.value = false
-        // Compress lưu vào thư mục của file đầu tiên
         lastOperationDestPath = resolvedDestPath ?: if (sourcePaths.isNotEmpty()) {
             java.io.File(sourcePaths.first()).parent
         } else null
-        FileOperationService.startCompress(getApplication(), sourcePaths, customName)
+        val opId = FileOperationService.startCompress(getApplication(), sourcePaths, customName)
+        activeOperationId = opId
         bindToService()
+        return opId
+    }
+
+    /**
+     * Extract archive entries. Trả về operationId.
+     * Chạy qua ForegroundService — có progress bar + notification + WakeLock.
+     */
+    fun extractFiles(
+        archivePath: String,
+        entryPaths: List<String>,
+        destPath: String,
+        allEntries: List<ArchiveEntry>,
+        password: String? = null
+    ): Int {
+        _isDialogHidden.value = false
+        lastOperationDestPath = destPath
+        val opId = FileOperationService.startExtract(
+            getApplication(), archivePath, entryPaths, destPath, allEntries, password
+        )
+        activeOperationId = opId
+        bindToService()
+        return opId
+    }
+
+    /**
+     * Move files to trash (delete). Trả về operationId.
+     * Chạy qua ForegroundService — có progress bar + notification + WakeLock.
+     */
+    fun trashFiles(sourcePaths: List<String>): Int {
+        _isDialogHidden.value = false
+        lastOperationDestPath = sourcePaths.firstOrNull()
+        val opId = FileOperationService.startTrash(getApplication(), sourcePaths)
+        activeOperationId = opId
+        bindToService()
+        return opId
     }
 
     fun hideOperationDialog() { _isDialogHidden.value = true }
@@ -123,10 +210,20 @@ abstract class BaseFileOperationViewModel(
     }
 
     fun cancelOperation() {
-        boundService?.cancelOperation()
-        unbindFromService()
+        if (activeOperationId > 0) {
+            boundService?.cancelOperation(activeOperationId)
+        }
         _operationState.value = null
         _isDialogHidden.value = false
+    }
+
+    /** Cancel operation cụ thể theo ID */
+    fun cancelOperation(opId: Int) {
+        boundService?.cancelOperation(opId)
+        if (opId == activeOperationId) {
+            _operationState.value = null
+            _isDialogHidden.value = false
+        }
     }
 
     fun isOperationRunning(): Boolean {
@@ -134,43 +231,46 @@ abstract class BaseFileOperationViewModel(
         return s is ProgressState.Running || s is ProgressState.Counting
     }
 
+    /** Kiểm tra xem có bất kỳ operation nào đang chạy */
+    fun isAnyOperationRunning(): Boolean {
+        return _operationsMap.value.any { (_, info) ->
+            info.state is ProgressState.Running || info.state is ProgressState.Counting
+        }
+    }
+
+    /** Kiểm tra xem có thể bắt đầu operation mới */
+    fun canStartOperation(): Boolean {
+        return boundService?.canStartOperation() ?: true
+    }
+
     // ── Override trong subclass nếu cần ─────────────────────────────────────
 
     /**
      * Gọi sau khi operation Done — subclass override để reload data.
-     * @param success số mục thành công
-     * @param failed số mục thất bại
-     * @param actionName tên thao tác (Sao chép, Di chuyển, Nén)
      */
     protected open fun onOperationDone(success: Int, failed: Int, actionName: String) {}
 
     // ── Internal ──────────────────────────────────────────────────────────────
 
     private fun bindToService() {
+        if (isBound) return
         val intent = Intent(getApplication(), FileOperationService::class.java)
-        getApplication<Application>().bindService(
+        isBound = getApplication<Application>().bindService(
             intent, serviceConnection, Context.BIND_AUTO_CREATE
         )
     }
 
     private fun unbindFromService() {
+        if (!isBound) return
         try {
             getApplication<Application>().unbindService(serviceConnection)
         } catch (_: Exception) {}
         boundService = null
+        isBound = false
     }
 
     override fun onCleared() {
         super.onCleared()
-        if (boundService != null) unbindFromService()
-    }
-
-    private fun extractActionName(title: String): String {
-        return when {
-            title.contains("sao chép", ignoreCase = true) -> "Sao chép"
-            title.contains("di chuyển", ignoreCase = true) -> "Di chuyển"
-            title.contains("nén", ignoreCase = true) -> "Nén"
-            else -> "Thao tác"
-        }
+        unbindFromService()
     }
 }

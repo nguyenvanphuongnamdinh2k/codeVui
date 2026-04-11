@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.codevui.data.DomainType
 import com.example.codevui.data.FileRepository
+import com.example.codevui.data.MediaStoreObserver
 import com.example.codevui.data.RecommendRepository
 import com.example.codevui.data.StorageAnalysis
 import com.example.codevui.data.StorageVolume
@@ -37,6 +38,18 @@ class StorageManagerViewModel(application: Application) : AndroidViewModel(appli
     init {
         loadStorageData()
         loadRecommendCards()
+        observeMediaStore()
+    }
+
+    /** Tự động reload khi MediaStore thay đổi (file bị xóa/thêm bởi app khác) */
+    private fun observeMediaStore() {
+        viewModelScope.launch {
+            MediaStoreObserver.observe(context)
+                .collect {
+                    loadStorageData()
+                    loadRecommendCards()
+                }
+        }
     }
 
     fun loadStorageData() {

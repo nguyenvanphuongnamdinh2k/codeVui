@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.outlined.Adb
 import androidx.compose.material.icons.outlined.Audiotrack
 import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.runtime.Composable
@@ -23,6 +24,8 @@ import com.example.codevui.model.FileType
 import com.example.codevui.model.RecentFile
 import com.example.codevui.model.StorageItem
 import com.example.codevui.ui.components.*
+import com.example.codevui.ui.thumbnail.ThumbnailData
+import com.example.codevui.ui.thumbnail.VideoThumbnailFetcher
 
 @Composable
 fun CategoriesGrid(
@@ -82,8 +85,8 @@ fun RecentFilesRow(
                 date = file.date,
                 isVideo = file.type == FileType.VIDEO,
                 thumbnailContent = when {
-                    // Image/Video → load thumbnail từ uri bằng Coil
-                    hasThumb && file.uri != Uri.EMPTY -> {
+                    // Image → load trực tiếp từ uri (IMAGE không cần custom fetcher)
+                    file.type == FileType.IMAGE && file.uri != Uri.EMPTY -> {
                         {
                             AsyncImage(
                                 model = ImageRequest.Builder(LocalContext.current)
@@ -96,15 +99,61 @@ fun RecentFilesRow(
                             )
                         }
                     }
+                    // Video → dùng ThumbnailData.Video để load thumbnail qua VideoThumbnailFetcher
+                    file.type == FileType.VIDEO && file.uri != Uri.EMPTY && file.path.isNotEmpty() -> {
+                        {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(ThumbnailData.Video(uri = file.uri, path = file.path))
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = file.name,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
                     // Doc → file type icon
                     file.type == FileType.DOC -> {
                         { FileTypeIcon(Icons.Default.Description, Color(0xFFFF6B4A)) }
                     }
-                    // Audio
+                    // Audio → dùng ThumbnailData.Audio để load embedded artwork qua AudioThumbnailFetcher
                     file.type == FileType.AUDIO -> {
-                        { FileTypeIcon(Icons.Outlined.Audiotrack, Color(0xFFFF5722)) }
+                        if (file.uri != Uri.EMPTY && file.path.isNotEmpty()) {
+                            {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(ThumbnailData.Audio(uri = file.uri, path = file.path))
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = file.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        } else {
+                            { FileTypeIcon(Icons.Outlined.Audiotrack, Color(0xFFFF5722)) }
+                        }
                     }
-                    // APK / Other
+                    // APK → dùng ThumbnailData.Apk để load icon qua ApkThumbnailFetcher
+                    file.type == FileType.APK -> {
+                        if (file.uri != Uri.EMPTY && file.path.isNotEmpty()) {
+                            {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(ThumbnailData.Apk(uri = file.uri, path = file.path))
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = file.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        } else {
+                            { FileTypeIcon(Icons.Outlined.Adb, Color(0xFF4CAF50)) }
+                        }
+                    }
+                    // Other (DOC, DOWNLOAD, ARCHIVE, etc.)
                     else -> {
                         { FileTypeIcon(Icons.Outlined.InsertDriveFile, Color(0xFF9E9E9E)) }
                     }

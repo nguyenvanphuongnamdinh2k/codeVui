@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,11 +24,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.codevui.data.TrashManager
+import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.model.DuplicateGroup
 import com.example.codevui.model.DuplicateItem
 import com.example.codevui.model.RecentFile
 import com.example.codevui.ui.common.dialogs.MoveToTrashDialog
+import com.example.codevui.ui.progress.OperationProgressDialog
 import com.example.codevui.ui.components.FileThumbnail
 import com.example.codevui.ui.selection.SelectionCheckbox
 import com.example.codevui.ui.selection.SelectionState
@@ -56,8 +58,11 @@ fun DuplicatesScreen(
     // Dialog state
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    // TrashManager instance
-    val trashManager = remember { TrashManager(viewModel.getApplication()) }
+    // Operation state
+    val operationState by viewModel.operationState.collectAsState()
+    val operationTitle by viewModel.operationTitle.collectAsState()
+    val isDialogHidden by viewModel.isDialogHidden.collectAsState()
+    val isOperationRunning = operationState is ProgressState.Running || operationState is ProgressState.Counting
 
     // Compute all duplicate item IDs (non-original items) from all groups
     val allDuplicateIds = remember(uiState.groups) {
@@ -83,29 +88,14 @@ fun DuplicatesScreen(
         }
     }
 
-    // Thực hiện move to trash sau khi user xác nhận
+    // Thực hiện move to trash sau khi user xác nhận — qua FileOperationService
     fun confirmDelete() {
         val selectedPaths = selection.selectedIds.toList()
         showDeleteDialog = false
         if (selectedPaths.isEmpty()) return
 
-        scope.launch {
-            try {
-                trashManager.moveToTrash(selectedPaths)
-                selection.exit()
-                viewModel.refresh()
-                snackbarHostState.showSnackbar(
-                    message = "Đã chuyển ${selectedPaths.size} file vào Thùng rác",
-                    duration = SnackbarDuration.Short
-                )
-            } catch (e: Exception) {
-                log.e("Failed to move duplicates to trash", e)
-                snackbarHostState.showSnackbar(
-                    message = "Lỗi xóa file: ${e.message}",
-                    duration = SnackbarDuration.Short
-                )
-            }
-        }
+        selection.exit()
+        viewModel.trashFiles(selectedPaths)
     }
 
     // Dialog xác nhận xóa
@@ -114,6 +104,16 @@ fun DuplicatesScreen(
             itemCount = selection.selectedIds.size,
             onDismiss = { showDeleteDialog = false },
             onConfirm = { confirmDelete() }
+        )
+    }
+
+    // Progress dialog khi đang xóa file
+    if (isOperationRunning && !isDialogHidden && operationState != null) {
+        OperationProgressDialog(
+            title = operationTitle,
+            state = operationState!!,
+            onCancel = { viewModel.cancelOperation() },
+            onDismiss = { viewModel.hideOperationDialog() }
         )
     }
 
@@ -263,26 +263,24 @@ fun DuplicatesScreen(
                 else -> {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         uiState.groups.forEachIndexed { groupIndex, group ->
-                            item {
+                            item(key = "header_${group.hash}") {
                                 DuplicateGroupHeader(group = group)
                             }
-                            itemsIndexed(group.items) { itemIndex, item ->
+                            items(
+                                items = group.items,
+                                key = { item -> item.file.path }
+                            ) { item ->
                                 DuplicateFileItem(
                                     item = item,
                                     groupSize = group.size,
                                     selection = selection,
                                     onFileClick = onFileClick
                                 )
-                                if (itemIndex < group.items.lastIndex) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(start = 84.dp),
-                                        color = Color(0xFFF0F0F0),
-                                        thickness = 1.dp
-                                    )
-                                }
                             }
                             if (groupIndex < uiState.groups.lastIndex) {
-                                item { Spacer(modifier = Modifier.height(16.dp)) }
+                                item(key = "spacer_${group.hash}") {
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                }
                             }
                         }
                     }

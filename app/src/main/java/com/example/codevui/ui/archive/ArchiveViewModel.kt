@@ -5,14 +5,13 @@ import android.os.Build
 import android.os.Environment
 import android.util.Log
 import androidx.annotation.RequiresApi
-import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.example.codevui.data.ArchiveReader
-import com.example.codevui.data.FileOperations
 import com.example.codevui.data.FileRepository
 import com.example.codevui.data.MediaStoreScanner
 import com.example.codevui.model.ArchiveEntry
+import com.example.codevui.ui.common.BaseFileOperationViewModel
 import com.example.codevui.ui.common.viewmodel.OperationResultManager
 import com.example.codevui.ui.selection.SelectionState
 import kotlinx.coroutines.Dispatchers
@@ -24,10 +23,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+/**
+ * ArchiveViewModel — extend BaseFileOperationViewModel để dùng
+ * FileOperationService cho extract (có progress + notification + WakeLock).
+ */
 class ArchiveViewModel(
     application: Application,
     private val savedStateHandle: SavedStateHandle
-) : AndroidViewModel(application) {
+) : BaseFileOperationViewModel(application) {
 
     private val _uiState = MutableStateFlow(ArchiveUiState())
     val uiState: StateFlow<ArchiveUiState> = _uiState.asStateFlow()
@@ -253,90 +256,74 @@ class ArchiveViewModel(
     fun getPassword(): String? = archivePassword
 
     /**
-     * Giải nén các entries đã chọn vào destination folder
-     * Giữ nguyên cấu trúc folder như trong archive
+     * Giải nén các entries đã chọn vào destination folder.
+     * Chạy qua FileOperationService — có byte-level progress + notification + WakeLock.
      */
     fun extractSelected(destPath: String) {
         val selectedIds = selection.selectedIds.toList()
         if (selectedIds.isEmpty()) return
-        val isPreview = _uiState.value.isPreviewMode
 
         Log.d("van.phuong.ArchiveVM", "extractSelected: selectedIds count = ${selectedIds.size}")
-        selectedIds.take(10).forEach { Log.d("van.phuong.ArchiveVM", "  Selected: $it") }
 
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                // Set loading state
-                _uiState.update {
-                    it.copy(
-                        isOperating = true,
-                        operationType = "Giải nén",
-                        operationProgress = 0,
-                        operationTotal = selectedIds.size
-                    )
-                }
-
-                // Convert selected IDs to entry paths
-                val selectedPaths = selectedIds.mapNotNull { id ->
-                    when {
-                        id.startsWith("dir:") -> id.removePrefix("dir:")
-                        id.startsWith("file:") -> id.removePrefix("file:")
-                        else -> null
-                    }
-                }
-
-                Log.d("van.phuong.ArchiveVM", "extractSelected: selectedPaths count = ${selectedPaths.size}")
-                selectedPaths.take(10).forEach { Log.d("van.phuong.ArchiveVM", "  Path: $it") }
-
-                // Extract entries with password if available
-                val (success, failed) = ArchiveReader.extractEntries(
-                    archivePath = archivePath,
-                    entryPaths = selectedPaths,
-                    destPath = destPath,
-                    allEntries = allEntries,
-                    password = archivePassword
-                )
-
-                Log.d("van.phuong.ArchiveVM", "extractSelected: success=$success, failed=$failed")
-
-                // Clear loading state
-                _uiState.update {
-                    it.copy(
-                        isOperating = false,
-                        operationType = "",
-                        operationProgress = 0,
-                        operationTotal = 0
-                    )
-                }
-
-                // Set result using shared component
-                resultManager.setResult(destPath, success, failed, "Giải nén")
-
-                // Scan MediaStore để các app khác nhận biết file mới được giải nén
-                if (success > 0) {
-                    MediaStoreScanner.scanNewFile(getApplication(), parentPath = destPath, newFilePath = null)
-                }
-
-                // Don't exit selection mode in preview mode
-                if (!isPreview) {
-                    selection.exit()
-                }
-            } catch (e: Exception) {
-                Log.e("van.phuong.ArchiveVM", "Extract failed", e)
-
-                // Clear loading state
-                _uiState.update {
-                    it.copy(
-                        isOperating = false,
-                        operationType = "",
-                        operationProgress = 0,
-                        operationTotal = 0
-                    )
-                }
-
-                // Set error result using shared component
-                resultManager.setResult(destPath, 0, selectedIds.size, "Giải nén")
+        // Convert selected IDs to entry paths
+        val selectedPaths = selectedIds.mapNotNull { id ->
+            when {
+                id.startsWith("dir:") -> id.removePrefix("dir:")
+                id.startsWith("file:") -> id.removePrefix("file:")
+                else -> null
             }
+        }
+
+        // Đánh dấu đang extract (UI có thể hiện progress dialog)
+        _uiState.update {
+            it.copy(
+                isOperating = true,
+                operationType = "Giải nén",
+                operationProgress = 0,
+                operationTotal = selectedIds.size
+            )
+        }
+
+        // Chạy qua ForegroundService — có progress + WakeLock + notification
+        extractFiles(
+            archivePath = archivePath,
+            entryPaths = selectedPaths,
+            destPath = destPath,
+            allEntries = allEntries,
+            password = archivePassword
+        )
+    }
+
+    /**
+     * Callback từ BaseFileOperationViewModel khi operation Done.
+     * Nếu đang trong flow move → tiếp tục xóa entries khỏi archive.
+     */
+    override fun onOperationDone(success: Int, failed: Int, actionName: String) {
+        val isPreview = _uiState.value.isPreviewMode
+
+        // Clear loading state
+        _uiState.update {
+            it.copy(
+                isOperating = false,
+                operationType = "",
+                operationProgress = 0,
+                operationTotal = 0
+            )
+        }
+
+        // Nếu đang trong flow move (extract → remove) → hoàn thành phần remove
+        if (pendingMoveSelectedPaths != null) {
+            completeMoveAfterExtract(success)
+            // Set result cho move
+            resultManager.setResult(pendingMoveDest ?: lastOperationDestPath ?: "", success, failed, "Di chuyển")
+        } else {
+            // Set result bình thường
+            resultManager.setResult(lastOperationDestPath ?: "", success, failed, actionName)
+        }
+
+        // Don't exit selection mode in preview mode
+        if (!isPreview) {
+            selection.exit()
         }
     }
 
@@ -367,104 +354,86 @@ class ArchiveViewModel(
     }
 
     /**
-     * Move selected items từ archive sang folder khác
-     * Extract rồi delete khỏi archive
+     * Move selected items từ archive sang folder khác.
+     * Extract qua service (có progress), sau đó xóa khỏi archive.
+     *
+     * Lưu ý: phần extract chạy qua service có progress,
+     * phần remove chạy nhanh (in-place zip4j) nên chạy trực tiếp.
      */
     fun moveSelected(destPath: String) {
         val selectedIds = selection.selectedIds.toList()
         if (selectedIds.isEmpty()) return
-        val isPreview = _uiState.value.isPreviewMode
 
+        val selectedPaths = selectedIds.mapNotNull { id ->
+            when {
+                id.startsWith("dir:") -> id.removePrefix("dir:")
+                id.startsWith("file:") -> id.removePrefix("file:")
+                else -> null
+            }
+        }
+
+        // Lưu thông tin để dùng sau khi extract Done
+        pendingMoveSelectedPaths = selectedPaths
+        pendingMoveDest = destPath
+
+        _uiState.update {
+            it.copy(
+                isOperating = true,
+                operationType = "Di chuyển",
+                operationProgress = 0,
+                operationTotal = selectedIds.size
+            )
+        }
+
+        // Chạy extract qua service
+        extractFiles(
+            archivePath = archivePath,
+            entryPaths = selectedPaths,
+            destPath = destPath,
+            allEntries = allEntries,
+            password = archivePassword
+        )
+    }
+
+    // Lưu tạm thông tin cho move (extract → remove)
+    private var pendingMoveSelectedPaths: List<String>? = null
+    private var pendingMoveDest: String? = null
+
+    /**
+     * Gọi sau khi extract Done — nếu đang trong flow move thì xóa entries khỏi archive
+     */
+    private fun completeMoveAfterExtract(success: Int) {
+        val paths = pendingMoveSelectedPaths ?: return
+        pendingMoveSelectedPaths = null
+        pendingMoveDest = null
+
+        if (success <= 0) return
+
+        // Remove từ archive (nhanh, in-place) — chạy IO
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Set loading state
-                _uiState.update {
-                    it.copy(
-                        isOperating = true,
-                        operationType = "Di chuyển",
-                        operationProgress = 0,
-                        operationTotal = selectedIds.size
-                    )
-                }
-
-                // Extract to destination first
-                val selectedPaths = selectedIds.mapNotNull { id ->
-                    when {
-                        id.startsWith("dir:") -> id.removePrefix("dir:")
-                        id.startsWith("file:") -> id.removePrefix("file:")
-                        else -> null
-                    }
-                }
-
-                val (extractSuccess, extractFailed) = ArchiveReader.extractEntries(
+                val (removeSuccess, _) = ArchiveReader.removeEntries(
                     archivePath = archivePath,
-                    entryPaths = selectedPaths,
-                    destPath = destPath,
+                    entryPaths = paths,
                     allEntries = allEntries,
                     password = archivePassword
                 )
+                Log.d("ArchiveVM", "Move: removed $removeSuccess from archive")
 
-                // Remove from archive after successful extraction
-                if (extractSuccess > 0) {
-                    val (removeSuccess, removeFailed) = ArchiveReader.removeEntries(
-                        archivePath = archivePath,
-                        entryPaths = selectedPaths,
-                        allEntries = allEntries,
-                        password = archivePassword
-                    )
-
-                    Log.d("ArchiveVM", "Move: extracted $extractSuccess, removed $removeSuccess from archive")
-
-                    // Reload archive to reflect changes
-                    if (removeSuccess > 0) {
-                        val entries = ArchiveReader.readEntries(archivePath, archivePassword)
-                        allEntries = entries
-                        val (folders, files) = ArchiveReader.listLevel(entries, _uiState.value.currentPath)
-                        _uiState.update {
-                            it.copy(
-                                folders = folders,
-                                files = files,
-                                totalEntries = entries.count { e -> !e.isDirectory }
-                            )
-                        }
+                if (removeSuccess > 0) {
+                    val entries = ArchiveReader.readEntries(archivePath, archivePassword)
+                    allEntries = entries
+                    val (folders, files) = ArchiveReader.listLevel(entries, _uiState.value.currentPath)
+                    _uiState.update {
+                        it.copy(
+                            folders = folders,
+                            files = files,
+                            totalEntries = entries.count { e -> !e.isDirectory }
+                        )
                     }
                 }
-
-                // Clear loading state
-                _uiState.update {
-                    it.copy(
-                        isOperating = false,
-                        operationType = "",
-                        operationProgress = 0,
-                        operationTotal = 0
-                    )
-                }
-
-                resultManager.setResult(destPath, extractSuccess, extractFailed, "Di chuyển")
-
-                // Scan MediaStore để các app khác nhận biết file mới được extract
-                if (extractSuccess > 0) {
-                    MediaStoreScanner.scanNewFile(getApplication(), parentPath = destPath, newFilePath = null)
-                }
-
-                // Don't exit selection mode in preview mode
-                if (!isPreview) {
-                    selection.exit()
-                }
             } catch (e: Exception) {
-                Log.e("ArchiveVM", "Move failed", e)
-
-                // Clear loading state
-                _uiState.update {
-                    it.copy(
-                        isOperating = false,
-                        operationType = "",
-                        operationProgress = 0,
-                        operationTotal = 0
-                    )
-                }
-
-                resultManager.setResult(destPath, 0, selectedIds.size, "Di chuyển")
+                Log.e("ArchiveVM", "Remove from archive failed after move", e)
             }
         }
     }

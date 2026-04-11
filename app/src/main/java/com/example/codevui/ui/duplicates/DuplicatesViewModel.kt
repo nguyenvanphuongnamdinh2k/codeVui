@@ -1,10 +1,12 @@
 package com.example.codevui.ui.duplicates
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.data.FileRepository
+import com.example.codevui.model.DuplicateGroup
+import com.example.codevui.ui.common.BaseMediaStoreViewModel
 import com.example.codevui.ui.common.viewmodel.OperationResultManager
 import com.example.codevui.ui.selection.SelectionState
 import kotlinx.coroutines.Dispatchers
@@ -18,8 +20,8 @@ import java.util.logging.Logger
 
 class DuplicatesViewModel(
     application: Application,
-    private val savedStateHandle: SavedStateHandle
-) : AndroidViewModel(application) {
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle()
+) : BaseMediaStoreViewModel(application) {
 
     private val repository = FileRepository(application)
     private val log = Logger.getLogger("DuplicatesVM")!!
@@ -31,28 +33,34 @@ class DuplicatesViewModel(
     val resultManager = OperationResultManager()
 
     init {
-        scanDuplicates()
+        reload()
     }
 
-    fun scanDuplicates() {
+    override fun reload() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isScanning = true, scanProgress = "Đang quét file...") }
             try {
                 log.info("Starting duplicate scan")
-                val groups = repository.findDuplicateFiles()
-                val totalWasted = groups.sumOf { it.wastedBytes }
-                log.info("Scan complete: ${groups.size} groups, wasted=${totalWasted} bytes")
+                val newGroups = repository.findDuplicateFiles()
+                val totalWasted = newGroups.sumOf { it.wastedBytes }
+
+                // Smart diff: giữ nguyên object reference nếu group không đổi
+                // → LazyColumn chỉ recompose item thực sự thay đổi
+                val currentGroups = _uiState.value.groups
+                val diffedGroups = diffGroups(currentGroups, newGroups)
+
                 _uiState.update {
                     it.copy(
-                        groups = groups,
+                        groups = diffedGroups,
                         isLoading = false,
                         isScanning = false,
                         scanProgress = "",
                         totalWasted = totalWasted,
-                        totalGroups = groups.size,
+                        totalGroups = newGroups.size,
                         error = null
                     )
                 }
+                log.info("Scan complete: ${newGroups.size} groups, wasted=${totalWasted} bytes")
             } catch (e: Exception) {
                 log.log(Level.SEVERE, "Error scanning duplicates", e)
                 _uiState.update {
@@ -67,7 +75,38 @@ class DuplicatesViewModel(
         }
     }
 
+    /**
+     * Diff 2 danh sách groups — giữ nguyên object reference cho groups không đổi.
+     * Compose LazyColumn so sánh equals() trên item → skip recompose nếu giống nhau.
+     */
+    private fun diffGroups(
+        current: List<DuplicateGroup>,
+        new: List<DuplicateGroup>
+    ): List<DuplicateGroup> {
+        if (current.isEmpty()) return new
+
+        val currentByHash = current.associateBy { it.hash }
+        val result = mutableListOf<DuplicateGroup>()
+
+        for (ng in new) {
+            val existing = currentByHash[ng.hash]
+            if (existing != null && existing == ng) {
+                // Group không đổi → giữ nguyên reference → Compose skip recompose
+                result.add(existing)
+            } else {
+                // Group mới hoặc thay đổi → dùng new object
+                result.add(ng)
+            }
+        }
+        return result
+    }
+
     fun refresh() {
-        scanDuplicates()
+        reload()
+    }
+
+    override fun onOperationDone(success: Int, failed: Int, actionName: String) {
+        // Operation done → reload duplicate scan
+        reload()
     }
 }

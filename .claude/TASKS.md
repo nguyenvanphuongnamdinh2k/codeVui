@@ -27,6 +27,8 @@
 | 2026-04-09 | Claude | Hoàn thành Task #019: Fix size file trùng lặp ở StorageManager không khớp với DuplicatesScreen — getDuplicateFilesSizeEstimate() giờ gọi findDuplicateFiles() (content hash) thay vì group-by-size-only |
 | 2026-04-09 | Claude | Hoàn thành Task #020: Thêm icon Yêu thích (Star) vào TopAppBar của FileListScreen, BrowseScreen, RecentFilesScreen, SearchScreen — SelectableScaffold + DefaultTopBar giờ có param onFavoritesClick nullable |
 | 2026-04-09 | Claude | Hoàn thành Task #021: Hiển thị dấu sao favorite trên file/folder rows của FileListScreen, RecentFilesScreen, SearchScreen — observe FavoriteManager.observeFavoritePaths giống BrowseScreen, pass isFavorite vào FileListItem/FolderListItem |
+| 2026-04-11 | Claude | Hoàn thành Task #022: Multi-operation support + Extract progress + WakeLock (MyFiles pattern) — FileOperationService multi-op, FileOperations.extractArchive(), BaseFileOperationViewModel multi-op, ArchiveViewModel extends Base |
+| 2026-04-11 | Claude | Hoàn thành Task #023: Rename nhiều file cùng lúc (Windows-style) — BatchRenameDialog + DialogManager.BATCH_RENAME + SelectionActionHandler batch rename loop |
 
 ---
 
@@ -283,3 +285,31 @@ Cũng fix `TrashManager.moveToTrash()`: size lưu vào Room dùng `calculateDirS
 - Carousel quick actions — File trùng lặp + File lớn với dots indicator
 - Suggestions expandable section
 - Navigation callback pattern cho mỗi action
+
+### Task #022 — Multi-operation support + Extract progress + WakeLock
+**Ngày:** 2026-04-11
+**Mô tả:** Nâng cấp FileOperationService hỗ trợ chạy nhiều operation đồng thời (MyFiles pattern), thêm byte-level progress cho giải nén archive, thêm WakeLock giữ CPU thức, giữ Kotlin Flow architecture.
+
+**Files đã tạo mới:** Không có
+
+**Files đã xóa:**
+- `ui/archive/OperationProgressDialog.kt` — thay bằng shared dialog từ `ui/progress/`
+
+**Files đã sửa:**
+- `data/FileOperations.kt` — Thêm `extractArchive()` method với byte-level progress qua `zipFile.getInputStream()`
+- `service/FileOperationService.kt` — Rewrite: multi-op via ConcurrentHashMap, AtomicInteger, WakeLock, startExtract(), notification grouping, MAX_OPERATION_COUNT=3
+- `ui/common/BaseFileOperationViewModel.kt` — Rewrite: operationsMap, extractFiles(), backward-compatible operationState/operationTitle
+- `ui/archive/ArchiveViewModel.kt` — Extends BaseFileOperationViewModel (thay AndroidViewModel), extractSelected/moveSelected qua service
+- `ui/archive/ArchiveScreen.kt` — Import shared OperationProgressDialog, collect operationState/operationTitle
+- `ui/browse/BrowseViewModel.kt` — extractArchive() dùng extractFiles() thay ArchiveReader.extractEntries() trực tiếp
+- `CLAUDE.md` — Cập nhật Service Layer, ViewModel Hierarchy, FileOperations section
+- `.claude/rules/mvvm.md` — Cập nhật ArchiveViewModel hierarchy
+
+**Patterns đã triển khai:**
+- Multi-operation: ConcurrentHashMap<Int, Job> + AtomicInteger cho unique operationId (MyFiles pattern)
+- OperationInfo data class expose per-operation state
+- WakeLock: PowerManager.PARTIAL_WAKE_LOCK cho CPU keep-alive
+- Byte-level extract progress: zip4j getInputStream() + manual buffer read
+- Notification grouping: summary + per-operation notifications
+- Static pendingExtractData cache cho Intent size limit
+- Move flow: extract via service → onOperationDone → completeMoveAfterExtract → ArchiveReader.removeEntries

@@ -138,10 +138,9 @@ com.example.codevui/
 │   │
 │   ├── archive/
 │   │   ├── ArchiveScreen.kt      # Browse inside ZIP (normal + preview mode)
-│   │   ├── ArchiveViewModel.kt   # open/extract/move/delete inside ZIP
+│   │   ├── ArchiveViewModel.kt   # open/extract/move/delete inside ZIP (extends BaseFileOperationViewModel)
 │   │   ├── ArchiveUiState.kt     # archivePath, folders, files, previewMode
-│   │   ├── ArchivePreviewActions.kt  # Preview mode action handler
-│   │   └── OperationProgressDialog.kt  # Extract progress dialog
+│   │   └── ArchivePreviewActions.kt  # Preview mode action handler
 │   │
 │   ├── duplicates/
 │   │   ├── DuplicatesScreen.kt     # File trùng lặp — scan, group display, selection
@@ -219,9 +218,7 @@ com.example.codevui/
 │
 ```
 
-**Note:** `OperationProgressDialog` hiện tồn tại ở 2 nơi:
-- `ui/progress/OperationProgressDialog.kt` — Samsung My Files style dialog dùng chung cho copy/move/compress
-- `ui/archive/OperationProgressDialog.kt` — dialog riêng cho extract trong ArchiveScreen
+**Note:** `OperationProgressDialog` nằm tại `ui/progress/OperationProgressDialog.kt` — Samsung My Files style dialog dùng chung cho tất cả operations (copy/move/compress/extract). ArchiveScreen cũng dùng dialog này cho extract/move qua service.
 
 ---
 
@@ -371,6 +368,7 @@ Singleton object. Tất cả hàm trả về `Flow<ProgressState>`.
 object FileOperations {
     fun execute(sources, destDir, COPY|MOVE): Flow<ProgressState>
     fun compressToZip(sources, customName?): Flow<ProgressState>
+    fun extractArchive(archivePath, entryPaths, destPath, allEntries, password?): Flow<ProgressState>
 }
 
 sealed class ProgressState {
@@ -384,6 +382,7 @@ sealed class ProgressState {
 - Dùng `channelFlow` + `async/awaitAll` để song song
 - Buffer 64KB, `isActive` cancellation
 - Kiểm tra `destDir.startsWith(source.path)` → không copy vào chính mình
+- `extractArchive`: byte-level progress qua `zipFile.getInputStream()` + manual buffer read (không dùng `zipFile.extractFile()`)
 
 ### `TrashManager.kt`
 Khởi tạo với Context. `.Trash/files/<ts>_<safeName>`.
@@ -582,42 +581,60 @@ StorageTypeForTrash.isFullOnlySdOrInternal(selected, noSpace): Boolean
 ## 6. Service Layer
 
 ### `FileOperationService.kt`
-ForegroundService cho copy/move/compress.
+ForegroundService cho copy/move/compress/extract. **Hỗ trợ multi-operation** (tối đa 3 đồng thời).
 
 ```kotlin
 class FileOperationService : Service() {
     inner class LocalBinder { fun getService(): FileOperationService }
 
-    // State
-    val operationState: StateFlow<ProgressState?>
-    val operationTitle: StateFlow<String>
+    // Multi-operation state
+    val operationsMap: StateFlow<Map<Int, OperationInfo>>
 
-    // Static launchers
-    fun startCopy(context, sources, destDir)
-    fun startMove(context, sources, destDir)
-    fun startCompress(context, sources, zipName?)
+    // Static launchers — trả về operationId (Int)
+    fun startCopy(context, sources, destDir): Int
+    fun startMove(context, sources, destDir): Int
+    fun startCompress(context, sources, zipName?): Int
+    fun startExtract(context, archivePath, entryPaths, destPath, allEntries, password?): Int
+
+    // Per-operation control
+    fun cancelOperation(opId: Int)
+    fun clearOperation(opId: Int)
+    fun isRunning(): Boolean
+    fun canStartOperation(): Boolean  // < MAX_OPERATION_COUNT
 }
+
+data class OperationInfo(
+    val id: Int, val title: String, val actionName: String,
+    val destPath: String, val state: ProgressState
+)
 
 // Notification deep-links
 const val ACTION_OPEN_FOLDER      // tap notification → open folder
 const val ACTION_PREVIEW_ARCHIVE  // tap "Xem trước" → ArchiveScreen preview
-const val EXTRA_FOLDER_PATH
-const val EXTRA_ARCHIVE_PATH
-const val EXTRA_ARCHIVE_NAME
 ```
 
-**Flow hoạt động:**
-1. `onStartCommand` → parse intent → chọn `flow` phù hợp
-2. `startForeground(NOTIFICATION_ID, progress notification)`
-3. `flow.collect` → update notification mỗi state change
-4. `Done/Error` → hủy notification → **MediaStoreScanner** → show result notification (5s timeout)
-5. `stopSelf()`
+**Multi-operation architecture:**
+- `ConcurrentHashMap<Int, Job>` — theo dõi coroutine Job cho mỗi operation
+- `AtomicInteger` — sinh unique operationId
+- `MAX_OPERATION_COUNT = 3` — giới hạn số operation đồng thời
+- `pendingExtractData: ConcurrentHashMap` — static cache cho extract data (Intent size limit)
 
-**Notification:**
-- Channel: `file_operation_channel`, IMPORTANCE_LOW
-- Progress bar (determinate khi biết total)
-- Nút "Thoát" → cancel intent
-- Result notification: tap → open folder, "Xem trước" action cho archive
+**WakeLock:**
+- `PowerManager.PARTIAL_WAKE_LOCK` — giữ CPU thức trong suốt operation
+- Acquire khi bắt đầu operation, release khi Done/Error
+- Tag: `"CodeVui:FileOp"`
+
+**Notification grouping:**
+- Summary notification (ID 99999) + per-operation notifications
+- Throttle 500ms để tránh spam hệ thống
+- Cancel button per-operation
+
+**Flow hoạt động:**
+1. `onStartCommand` → parse intent → `launchOperation(opId, flow)`
+2. `startForeground(NOTIFICATION_ID, summary notification)`
+3. `WakeLock.acquire()` → `flow.collect` → update notification mỗi state change
+4. `Done/Error` → hủy notification → **MediaStoreScanner** → show result notification (5s timeout)
+5. `WakeLock.release()` → `stopSelf()` khi không còn operation nào
 
 ---
 
@@ -625,7 +642,7 @@ const val EXTRA_ARCHIVE_NAME
 
 ```
 AndroidViewModel
-└── BaseFileOperationViewModel          # bind FileOperationService
+└── BaseFileOperationViewModel          # bind FileOperationService (multi-op: operationsMap, extractFiles)
     ├── BaseMediaStoreViewModel          # + MediaStoreObserver auto-reload
     │   ├── BrowseViewModel               # + Sortable + Navigable + Reloadable
     │   │   └── (LruCache 50, AtomicBoolean lock)
@@ -635,7 +652,7 @@ AndroidViewModel
     ├── FavoritesViewModel                # + SelectionState (copy/move/delete/share)
     │   # Favorites không dùng MediaStore → extend trực tiếp BaseFileOperationViewModel
     │   # Room Flow auto-reload khi DB thay đổi
-    └── ArchiveViewModel                  # (extends AndroidViewModel directly)
+    └── ArchiveViewModel                  # extends BaseFileOperationViewModel (extract/move qua service)
         # Archive không dùng MediaStore → không cần BaseMediaStoreViewModel
 ```
 
@@ -809,7 +826,8 @@ ClipboardManager.clear()
 
 | Dialog | Trigger | Key Behavior |
 |---|:---|---|
-| `RenameDialog` | Selection → Đổi tên | Auto-append extension cho file không có extension |
+| `RenameDialog` | Selection → Đổi tên (1 file) | Auto-append extension cho file không có extension |
+| `BatchRenameDialog` | Selection → Đổi tên (N files) | Danh sách items với TextField per item, đổi tên nhiều file cùng lúc |
 | `DeleteConfirmDialog` | Selection → Xóa | Gọi `TrashViewModel.moveToTrash` |
 | `MoveToTrashDialog` | Long-press file | Warning: "File sẽ bị xóa sau 30 ngày" |
 | `DetailsDialog` | Selection → Chi tiết | Name, size, path, modified, MIME, owner app |

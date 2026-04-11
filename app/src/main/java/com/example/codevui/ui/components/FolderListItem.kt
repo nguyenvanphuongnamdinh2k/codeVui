@@ -1,5 +1,7 @@
 package com.example.codevui.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.res.painterResource
 import com.example.codevui.R
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +39,7 @@ fun FolderListItem(
     isSelected: Boolean = false,
     isLandscape: Boolean = false,
     isFavorite: Boolean = false,
+    isRenamed: Boolean = false,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
     onToggleSelect: () -> Unit = {}
@@ -49,6 +53,17 @@ fun FolderListItem(
     val spacerWidth = if (isLandscape) 10.dp else 16.dp
     val innerSpacerHeight = if (isLandscape) 2.dp else 4.dp
 
+    // Animate background khi vừa rename (xanh nhạt → transparent sau 2.5s)
+    val animatedBg by animateColorAsState(
+        targetValue = when {
+            isSelected -> Color(0xFFF0F6FF)
+            isRenamed -> Color(0xFFE8F5E9)
+            else -> Color.Transparent
+        },
+        animationSpec = tween(durationMillis = 600),
+        label = "folderRenameHighlight"
+    )
+
     Column(modifier = modifier) {
         Row(
             modifier = Modifier
@@ -61,7 +76,7 @@ fun FolderListItem(
                         if (!isSelectionMode) onLongClick()
                     }
                 )
-                .background(if (isSelected) Color(0xFFF0F6FF) else Color.Transparent)
+                .background(animatedBg)
                 .padding(horizontal = horizontalPadding, vertical = verticalPadding),
             verticalAlignment = Alignment.CenterVertically
         ) {
