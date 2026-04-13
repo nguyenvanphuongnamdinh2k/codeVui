@@ -14,9 +14,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.Coil
+import com.example.codevui.data.DefaultAppManager
 import com.example.codevui.model.FileType
 import com.example.codevui.model.RecentFile
 import com.example.codevui.service.FileOperationService
+import com.example.codevui.ui.common.dialogs.OpenWithDialog
+import com.example.codevui.ui.common.dialogs.openFileWithApp
+import com.example.codevui.ui.common.dialogs.openFileWithSavedDefault
 import com.example.codevui.ui.archive.ArchiveScreen
 import com.example.codevui.ui.browse.BrowseScreen
 import com.example.codevui.ui.common.AdaptiveLayout
@@ -93,6 +97,9 @@ fun MyFilesApp(
     val context = LocalContext.current
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
+    // State cho dialog "Mở bằng" — null = không hiện
+    var openWithFile by remember { mutableStateOf<RecentFile?>(null) }
+
     // Handle deep link từ notification - navigate đến folder đích
     LaunchedEffect(pendingFolderPath) {
         if (pendingFolderPath != null) {
@@ -127,6 +134,9 @@ fun MyFilesApp(
         mainViewModel.goBack()
     }
 
+    // Capture setter để dùng trong lambda (MutableState stable qua recomposition)
+    val setOpenWithFile: (RecentFile?) -> Unit = { openWithFile = it }
+
     // remember để tránh tạo lại lambda mỗi lần recompose
     // Chỉ tạo lại khi context hoặc mainViewModel thay đổi (hiếm khi xảy ra)
     val handleFileOpen = remember(context, mainViewModel) {
@@ -157,23 +167,14 @@ fun MyFilesApp(
                 return@remember
             }
 
-            try {
-                val javaFile = java.io.File(file.path)
-                val uri = FileProvider.getUriForFile(
-                    context, "${context.packageName}.fileprovider", javaFile
-                )
-                val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, mimeType)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(Intent.createChooser(intent, "Mở bằng"))
-            } catch (e: Exception) {
-                android.widget.Toast.makeText(
-                    context, "Không tìm thấy ứng dụng để mở file này",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+            // Kiểm tra default app đã được lưu cho extension này chưa
+            val defaultApp = DefaultAppManager.getDefaultApp(context, ext)
+            if (defaultApp != null) {
+                // Có default app → mở thẳng, không hỏi
+                openFileWithSavedDefault(context, file, defaultApp)
+            } else {
+                // Chưa có default → hiện dialog chọn app
+                setOpenWithFile(file)
             }
         }
     }
@@ -197,6 +198,29 @@ fun MyFilesApp(
         { screen: Screen ->
             mainViewModel.navigateReplace(screen)
         }
+    }
+
+    // ── Dialog "Mở bằng" ────────────────────────────────────────────────────
+    val openWithFileSnapshot = openWithFile
+    if (openWithFileSnapshot != null) {
+        OpenWithDialog(
+            file = openWithFileSnapshot,
+            onDismiss = { openWithFile = null },
+            onJustOnce = { appInfo ->
+                // Mở file một lần, KHÔNG lưu preference
+                openFileWithApp(context, openWithFileSnapshot, appInfo)
+                openWithFile = null
+            },
+            onAlways = { appInfo ->
+                // Lưu app này làm mặc định cho extension → mở file
+                val ext = openWithFileSnapshot.path.substringAfterLast('.', "").lowercase()
+                DefaultAppManager.setDefaultApp(
+                    context, ext, appInfo.packageName, appInfo.activityName
+                )
+                openFileWithApp(context, openWithFileSnapshot, appInfo)
+                openWithFile = null
+            }
+        )
     }
 
     AdaptiveLayout(

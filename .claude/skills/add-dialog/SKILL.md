@@ -15,6 +15,42 @@ Screen: dialogManager.showXxx(...) → UI
 DialogHandler(dialogManager)       → Auto-render đúng dialog
 ```
 
+## Dialog Manager — State Machine
+
+```kotlin
+sealed class DialogState {
+    object None
+    data class Rename(val path: String, val name: String)
+    data class DeleteConfirm(val paths: List<String>)
+    data class MoveToTrash(val path: String)
+    data class Details(val path: String)
+    data class OpenWith(val path: String, val mimeType: String)
+    data class Password(val onOk: (String) -> Unit)
+    data class Extract(val archivePath: String, val entries: List<ArchiveEntry>, val destPath: String)
+    data class Compress(val paths: List<String>)
+    data class CreateFolder(val currentPath: String)
+    data class CreateFile(val currentPath: String)
+    data class PasteConflict(val name: String, val onResolve: (ConflictResolution) -> Unit)
+}
+```
+
+## Dialog Reference — Tất cả dialog trong app
+
+| Dialog | Trigger | Key Behavior |
+|---|:---|---|
+| `RenameDialog` | Selection → Đổi tên (1 file) | Auto-append extension cho file không có extension |
+| `BatchRenameDialog` | Selection → Đổi tên (N files) | Danh sách items với TextField per item |
+| `DeleteConfirmDialog` | Selection → Xóa | Gọi `TrashViewModel.moveToTrash` |
+| `MoveToTrashDialog` | Long-press file | Warning: "File sẽ bị xóa sau 30 ngày" |
+| `DetailsDialog` | Selection → Chi tiết | Name, size, path, modified, MIME, owner app |
+| `PasswordDialog` | Archive encrypted | Visibility toggle, ok/cancel |
+| `ExtractDialog` | Archive → Giải nén | Auto-resolve name conflict (rename) |
+| `OpenWithDialog` | Click file (không có default app) | List apps từ PackageManager, "Chỉ một lần" / "Luôn luôn"; lưu vào `DefaultAppManager` |
+| `CompressDialog` | Selection → Nén | Auto-resolve conflict, custom ZIP name input |
+| `CreateFolderDialog` | FAB → Folder | Auto-generate "Thư mục N", validate empty/duplicate |
+| `CreateFileDialog` | FAB → File | Auto-add .txt, validate empty/duplicate |
+| `PasteConflictDialog` | Paste conflict | Thay thế / Đổi tên / Thoát |
+
 ## Step-by-Step
 
 ### Step 1 — Viết Composable Dialog
@@ -67,7 +103,7 @@ fun TênDialog(
 **Quy tắc:**
 - Dùng `AlertDialog` (Material 3)
 - Params luôn có `onDismiss` và `onConfirm`
-- Auto-dismiss sau `onConfirm` — DialogManager.confirm() làm điều đó
+- Auto-dismiss sau `onConfirm` — `DialogManager.confirm()` làm điều đó
 - Confirm button chỉ active khi input hợp lệ
 
 ### Step 2 — Thêm DialogType
@@ -142,7 +178,7 @@ DialogHandler(dialogManager)
 | Convention | Lý do |
 |---|---|
 | Tất cả dialog qua DialogManager | UI screen gọn, dễ quản lý state |
-| `onConfirm` không tự gọi `dismiss()` | DialogManager.confirm() làm điều đó |
+| `onConfirm` không tự gọi `dismiss()` | `DialogManager.confirm()` làm điều đó |
 | Đặt `DialogHandler` ở cuối Composable | Render sau cùng → dialog trên cùng |
 | Dùng `rememberDialogManager()` | Composable-level state, tự cleanup |
 | Confirm chỉ active khi input hợp lệ | Không submit empty/blank |
@@ -156,4 +192,4 @@ DialogHandler(dialogManager)
 - [ ] Thêm `case` vào `DialogHandler`
 - [ ] Test: mở → nhập → confirm → callback gọi đúng
 - [ ] Test: back press / tap outside → dismiss
-- [ ] Cập nhật `CLAUDE.md` §12 Dialog Reference
+- [ ] Cập nhật `CLAUDE.md` Dialog section

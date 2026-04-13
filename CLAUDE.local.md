@@ -53,9 +53,6 @@
 
 ## 4. Ghi chú MyFiles Quick Reference
 
-Đường dẫn MyFiles trên máy mình:
-`C:\Users\phuong\Desktop\codeMyFiles\MyFiles\MyFiles\app\src\main\java\com\sec\android\app\myfiles\`
-
 Hay đọc:
 - `presenter/managers/EnvManager.kt` — để hiểu multi-volume
 - `ui/dialog/DialogManager.kt` — để hiểu dialog flow

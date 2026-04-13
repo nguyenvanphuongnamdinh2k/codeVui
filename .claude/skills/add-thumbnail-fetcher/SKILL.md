@@ -49,14 +49,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import coil.ImageLoader
-import coil.decode.DataSource
-import coil.fetch.FetchResult
 import coil.fetch.Fetcher
-import coil.fetch.SourceResult
 import coil.request.Options
 import com.example.codevui.util.Logger
-import okio.buffer
-import okio.source
 import java.io.File
 
 class YourThumbnailFetcher(
@@ -68,10 +63,8 @@ class YourThumbnailFetcher(
 
     override suspend fun extractBitmap(): Bitmap? {
         return try {
-            // Logic extract bitmap từ file
             val file = File(data.path)
             if (!file.exists()) return null
-            // Example: decode first page / frame / embedded preview
             BitmapFactory.decodeFile(data.path)  // replace with real extraction
         } catch (e: Exception) {
             log.e("extractBitmap failed: ${e.message}", e)
@@ -80,11 +73,7 @@ class YourThumbnailFetcher(
     }
 
     class Factory(private val context: Context) : Fetcher.Factory<ThumbnailData.YourType> {
-        override fun create(
-            data: ThumbnailData.YourType,
-            options: Options,
-            imageLoader: ImageLoader,
-        ): Fetcher {
+        override fun create(data: ThumbnailData.YourType, options: Options, imageLoader: ImageLoader): Fetcher {
             return YourThumbnailFetcher(data, context)
         }
     }
@@ -98,22 +87,18 @@ class YourThumbnailFetcher(
 ```kotlin
 object ThumbnailManager {
     fun setup(context: Context, builder: ImageLoader.Builder): ImageLoader.Builder {
-        return builder
-            .components {
-                // ... existing ...
-                add(VideoThumbnailFetcher.Factory(context))
-                add(AudioThumbnailFetcher.Factory(context))
-                add(ApkThumbnailFetcher.Factory(context))
-                add(ArchiveThumbnailFetcher.Factory(context))
-                add(YourThumbnailFetcher.Factory(context))  // ← THÊM
-            }
+        return builder.components {
+            add(VideoThumbnailFetcher.Factory(context))
+            add(AudioThumbnailFetcher.Factory(context))
+            add(ApkThumbnailFetcher.Factory(context))
+            add(ArchiveThumbnailFetcher.Factory(context))
+            add(YourThumbnailFetcher.Factory(context))  // ← THÊM
+        }
     }
 }
 ```
 
-### Step 4 — Dùng trong composable
-
-**File:** `app/src/main/java/com/example/codevui/ui/components/FileListItem.kt` (hoặc nơi cần)
+### Step 4 — Dùng trong Composable
 
 ```kotlin
 val thumbnailData = when {
@@ -133,18 +118,29 @@ AsyncImage(
 
 ### Step 5 — Extend FileType detection (nếu cần)
 
-**File:** `app/src/main/java/com/example/codevui/model/Model.kt`
-
-```kotlin
-enum class FileType {
-    IMAGE, VIDEO, AUDIO, DOC, APK, ARCHIVE, DOWNLOAD, YOUR_TYPE, OTHER
-}
-```
+Xem `model/Model.kt` → thêm vào enum `FileType`.
 
 Và update:
 - `FileRepository.getFileType(mimeType)` — map MIME → FileType
 - `FormatUtils` / icon picker — icon cho FileType mới
 - `FileListScreen` filter chip nếu cần
+
+## Examples to Copy From
+
+| Fetcher | Method |
+|---|---|
+| `VideoThumbnailFetcher` | ContentResolver.loadThumbnail (Q+) / ThumbnailUtils |
+| `AudioThumbnailFetcher` | MediaMetadataRetriever.embeddedPicture |
+| `ApkThumbnailFetcher` | PackageManager.getApplicationIcon |
+| `ArchiveThumbnailFetcher` | extract-to-temp + decodeFile |
+
+## Common Pitfalls
+
+1. **Quên `path.isNotEmpty()` check** → crash khi model init
+2. **Không register factory** → Coil fallback về URI → sai thumbnail
+3. **Blocking main thread** trong `extractBitmap` → UI jank. Fetcher tự chạy trên IO thread nhưng bitmap decode heavy nên cần cẩn thận.
+4. **Content URI crash MediaMetadataRetriever** → dùng `ContentResolver.openFileDescriptor` + `setDataSource(FileDescriptor)`
+5. **OOM với file to** → resize với `BitmapFactory.Options.inSampleSize`
 
 ## Checklist
 
@@ -155,30 +151,5 @@ Và update:
 - [ ] Register trong `ThumbnailManager.setup()`
 - [ ] Map file extension → `ThumbnailData.YourType` ở composable
 - [ ] Check `path.isNotEmpty()` trước khi tạo `ThumbnailData`
-- [ ] Logger để debug
-- [ ] Handle cả `file://` và `content://` URI nếu cần (xem `AudioThumbnailFetcher` pattern)
 - [ ] Test trên file thật — không crash khi file corrupted/missing
-
-## Common Pitfalls
-
-1. **Quên `path.isNotEmpty()` check** → crash khi model init
-2. **Không register factory** → Coil fallback về URI → sai thumbnail
-3. **Blocking main thread** trong `extractBitmap` → UI jank. Fetcher tự chạy trên IO thread nhưng bitmap decode heavy nên cần cẩn thận.
-4. **Không cache** → decode lại mỗi scroll. Coil có memory cache sẵn, nhưng cần đảm bảo `equals/hashCode` của `ThumbnailData` đúng (data class tự sinh, OK).
-5. **Content URI crash MediaMetadataRetriever** → dùng `ContentResolver.openFileDescriptor` + `setDataSource(FileDescriptor)`
-6. **OOM với file to** → resize với `BitmapFactory.Options.inSampleSize`
-
-## Examples to copy from
-
-- `VideoThumbnailFetcher.kt` — dùng ContentResolver.loadThumbnail (Q+) / ThumbnailUtils
-- `AudioThumbnailFetcher.kt` — MediaMetadataRetriever với embedded picture
-- `ApkThumbnailFetcher.kt` — PackageManager.getApplicationIcon
-- `ArchiveThumbnailFetcher.kt` — extract-to-temp + decodeFile
-
-## Sau khi thêm
-
-1. `./gradlew assembleDebug` — verify build
-2. Test trên device với file thật
-3. Update `CLAUDE.md` section 2 (Package Structure)
-4. Update `CLAUDE.md` section 13 "Coil Custom Fetchers" table
-5. Update `TASKS.md` task entry
+- [ ] Build verify

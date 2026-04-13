@@ -18,6 +18,8 @@
 | 2026-04-03 | Claude | Hoàn thành Task #010: Fix duplicate detection không nhận file đổi tên |
 | 2026-04-03 | Claude | Hoàn thành Task #011: Fix SelectionCheckbox không hiện dấu tích toàn app |
 | 2026-04-03 | Claude | Hoàn thành Task #012: Tạo UnusedAppsScreen (Samsung My Files style) |
+| 2026-04-12 | Claude | Hoàn thành Task #013: Refactor CLAUDE.md — tách chi tiết ra .claude/reference/ |
+| 2026-04-12 | Claude | Hoàn thành Task #014: Tích hợp reference/ vào skills — xóa reference/, update add-dialog + add-screen + add-thumbnail-fetcher SKILL |
 | 2026-04-04 | Claude | Hoàn thành Task #013: Triển khai Favorites (MyFiles style) — Room DB, FavoritesScreen, DrawerPane, HomeScreen |
 | 2026-04-06 | Claude | Hoàn thành Task #014: Fix Favorites thumbnail không load (mimeType null + AudioThumbnailFetcher API lỗi) |
 | 2026-04-06 | Claude | Hoàn thành Task #015: Sửa selection mode — giữ mode khi uncheck hết, chỉ thoát khi nhấn Thoát |
@@ -28,6 +30,7 @@
 | 2026-04-09 | Claude | Hoàn thành Task #020: Thêm icon Yêu thích (Star) vào TopAppBar của FileListScreen, BrowseScreen, RecentFilesScreen, SearchScreen — SelectableScaffold + DefaultTopBar giờ có param onFavoritesClick nullable |
 | 2026-04-09 | Claude | Hoàn thành Task #021: Hiển thị dấu sao favorite trên file/folder rows của FileListScreen, RecentFilesScreen, SearchScreen — observe FavoriteManager.observeFavoritePaths giống BrowseScreen, pass isFavorite vào FileListItem/FolderListItem |
 | 2026-04-11 | Claude | Hoàn thành Task #022: Multi-operation support + Extract progress + WakeLock (MyFiles pattern) — FileOperationService multi-op, FileOperations.extractArchive(), BaseFileOperationViewModel multi-op, ArchiveViewModel extends Base |
+| 2026-04-11 | Claude | Hoàn thành Task #023: Default app per extension — DefaultAppManager (SharedPreferences), OpenWithDialog (list apps + Chỉ một lần / Luôn luôn), integrate vào handleFileOpen MainActivity |
 | 2026-04-11 | Claude | Hoàn thành Task #023: Rename nhiều file cùng lúc (Windows-style) — BatchRenameDialog + DialogManager.BATCH_RENAME + SelectionActionHandler batch rename loop |
 
 ---
@@ -310,6 +313,4 @@ Cũng fix `TrashManager.moveToTrash()`: size lưu vào Room dùng `calculateDirS
 - OperationInfo data class expose per-operation state
 - WakeLock: PowerManager.PARTIAL_WAKE_LOCK cho CPU keep-alive
 - Byte-level extract progress: zip4j getInputStream() + manual buffer read
-- Notification grouping: summary + per-operation notifications
-- Static pendingExtractData cache cho Intent size limit
-- Move flow: extract via service → onOperationDone → completeMoveAfterExtract → ArchiveReader.removeEntries
+- Notification grouping: summary + per-ope

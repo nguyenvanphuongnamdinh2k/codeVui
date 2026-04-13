@@ -1,6 +1,6 @@
 ---
 name: myfiles-reference
-description: Tra cứu code Samsung My Files (tại ../MyFiles/MyFiles/) để port pattern sang CodeVui. Dùng khi cần implement feature tương tự My Files hoặc hiểu Samsung làm feature X ra sao.
+description: Tra cứu code Samsung My Files để port pattern sang CodeVui. Dùng khi cần implement feature tương tự My Files hoặc hiểu Samsung làm feature X ra sao.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
@@ -10,9 +10,6 @@ model: sonnet
 Bạn là chuyên gia tra cứu code Samsung My Files để port sang CodeVui.
 
 ## Source Location
-
-**Root:** `C:/Users/phuong/Desktop/codeMyFiles/MyFiles/MyFiles/`
-(Trong remote session: `/sessions/gracious-gifted-curie/mnt/codeMyFiles/MyFiles/MyFiles/`)
 
 **Main package:** `app/src/main/java/com/sec/android/app/myfiles/`
 
