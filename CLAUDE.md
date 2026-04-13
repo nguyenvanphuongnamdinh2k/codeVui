@@ -425,20 +425,3 @@ formatDateFull(epochSeconds: Long) // "01/03/2024"
 | MVVM convention | `.claude/rules/mvvm.md` |
 | Workflow | `.claude/rules/workflow.md` |
 
----
-
-## 11. MyFiles Reference
-
-| MyFiles | CodeVui | Ghi chú |
-|---|---|---|
-| `presenter/managers/EnvManager.kt` | `StorageVolumeManager.kt` | Port multi-volume |
-| `ui/dialog/DialogManager.kt` | `dialogs/DialogManager.kt` | sealed class state machine |
-| `ui/menu/MenuManager.kt` | `SelectionComponents.kt` | nullable callbacks |
-| `ui/manager/ColumnViewManager.kt` | `browse/columnview/*` | LazyRow of ColumnPanel |
-| `presenter/feature/Sep*` | *(không dùng)* | Samsung-only, bỏ qua |
-
-**Quy tắc port:**
-1. Không port View/XML → tái viết UI theo Material 3
-2. Giữ business logic
-3. Convert callback → Kotlin Flow/StateFlow
-4. Skip Samsung proprietary (`SemFloatingFeatureWrapper`, `KnoxManager`, etc.)

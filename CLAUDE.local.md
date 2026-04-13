@@ -51,17 +51,8 @@
 - Không dùng `!!` — ưu tiên `?.let { }` hoặc `requireNotNull`
 - Chỉ dùng `LaunchedEffect(Unit)` cho 1-shot side effect, còn lại dùng key
 
-## 4. Ghi chú MyFiles Quick Reference
+## 4. TODO Local (chưa gán task chính thức)
 
-Hay đọc:
-- `presenter/managers/EnvManager.kt` — để hiểu multi-volume
-- `ui/dialog/DialogManager.kt` — để hiểu dialog flow
-- `ui/menu/operator/*.kt` — để hiểu contextual menu visibility
-- `ui/pages/managestorage/` — để hiểu Quản lý lưu trữ UI
-
-## 5. TODO Local (chưa gán task chính thức)
-
-- [ ] Thử port `DragManager` của MyFiles → Compose DnD cho CodeVui
 - [ ] Nghiên cứu `AsyncLayoutInflateManager` — Compose có tương đương không?
 - [ ] Viết unit test cho `FileOperations` (hiện chưa có test)
 - [ ] Thêm dark mode theme tùy biến (hiện chỉ dùng Material 3 dynamic)
@@ -78,8 +69,7 @@ Hay đọc:
 
 Khi thay đổi package structure nhiều:
 1. Cập nhật section 2 (Package Structure) của CLAUDE.md
-2. Update bảng mapping ở section 18 nếu port thêm từ MyFiles
-3. Thêm entry vào TASKS.md
+2. Thêm entry vào TASKS.md
 4. Update memory.md nếu learning mới về architecture
 
 ---

@@ -77,7 +77,7 @@ class MyViewModel(app: Application) : BaseMediaStoreViewModel(app) {
 
 - Singleton `object` OK cho manager KHÔNG cần Context
 - Manager cần Context → `fun setup(context)` + internal state
-- Manager pattern từ MyFiles:
+- Các Manager trong app:
   - `StorageVolumeManager` — quản lý volumes
   - `StorageUsageManager` — query size
   - `ClipboardManager` — in-app clipboard

@@ -17,7 +17,6 @@
 - **Không commit giữa chừng** — chỉ commit khi build success
 - **Log mọi quyết định lớn** (> 30 phút suy nghĩ) vào `memory.md` sau khi xong
 - **Tuân thủ MVVM convention** — xem `.claude/rules/mvvm.md`
-- **Ưu tiên reference MyFiles** khi port feature mới — xem agent `myfiles-reference`
 
 ## 3. Kết Thúc Task
 
@@ -46,4 +45,3 @@ Checklist bắt buộc:
 - ✅ Viết log qua `Logger(class)` — không `Log.d` raw
 - ✅ Scan MediaStore sau mọi file operation
 - ✅ Test trên device thật nếu có `MANAGE_EXTERNAL_STORAGE`
-- ✅ Copy pattern từ MyFiles khi port feature phức tạp
