@@ -27,6 +27,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.PermissionChecker
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.codevui.ui.components.SectionHeader
 import com.example.codevui.ui.components.SectionTitle
@@ -48,7 +49,7 @@ fun HomeScreen(
     onFavoritesClick: () -> Unit = {},
     onStorageInfoLoaded: (used: String, total: String) -> Unit = { _, _ -> }
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     // Permission handling
     val context = LocalContext.current

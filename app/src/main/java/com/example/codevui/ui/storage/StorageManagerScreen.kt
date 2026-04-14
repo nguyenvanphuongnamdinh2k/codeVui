@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.codevui.data.DomainType
 import com.example.codevui.util.formatStorageSize
@@ -75,7 +76,7 @@ fun StorageManagerScreen(
     onNavigateToRecommend: (RecommendType) -> Unit = {},
     onVolumeSelect: (Int) -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var carouselPage by remember { mutableIntStateOf(0) }
 
     Log.d("StorageScreen", "StorageManagerScreen recomposition: totalFormatted=${uiState.totalFormatted}, storageInfo.totalBytes=${uiState.storageInfo?.totalBytes}, volumes=${uiState.volumes.map { "${it.domainType}:${it.totalBytes}" }}")

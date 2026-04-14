@@ -1,6 +1,6 @@
 package com.example.codevui.data
 
-import android.util.Log
+import com.example.codevui.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -38,7 +38,7 @@ import java.util.zip.ZipOutputStream
  */
 object FileOperations {
 
-    private const val TAG = "FileOperations"
+    private val log = Logger("FileOperations")
     private const val BUFFER_SIZE = 65536 // 64KB buffer cho performance tốt hơn
 
     enum class OperationType { COPY, MOVE }
@@ -76,7 +76,7 @@ object FileOperations {
             ))
             emit(ProgressState.Done(success = doneCount, failed = failed))
         } catch (e: Exception) {
-            Log.e(TAG, "trashFiles failed", e)
+            log.e("trashFiles failed", e)
             emit(ProgressState.Error(e.message ?: "Lỗi khi xóa file"))
         }
     }.flowOn(Dispatchers.IO)
@@ -128,11 +128,11 @@ object FileOperations {
             .filter { source ->
                 when {
                     !source.exists() -> {
-                        Log.e(TAG, "Source not found: ${source.path}")
+                        log.e("Source not found: ${source.path}")
                         false
                     }
                     destDir.startsWith(source.absolutePath) -> {
-                        Log.e(TAG, "Cannot copy/move into itself: ${source.path}")
+                        log.e("Cannot copy/move into itself: ${source.path}")
                         false
                     }
                     else -> true
@@ -174,7 +174,7 @@ object FileOperations {
                         }
                     )
                 } catch (e: Exception) {
-                    Log.e(TAG, "$operation failed: ${source.path}", e)
+                    log.e("$operation failed: ${source.path}", e)
                     mutex.withLock { failed++ }
                 }
             }
@@ -241,7 +241,7 @@ object FileOperations {
             }
             emit(ProgressState.Done(success = done, failed = failed, outputPath = zipFile.absolutePath))
         } catch (e: Exception) {
-            Log.e(TAG, "Compress failed", e)
+            log.e("Compress failed", e)
             zipFile.delete()
             emit(ProgressState.Error(e.message ?: "Lỗi không xác định khi nén"))
         }
@@ -386,10 +386,10 @@ object FileOperations {
                         emit(ProgressState.Error("Sai mật khẩu"))
                         return@flow
                     }
-                    Log.e(TAG, "Extract failed: $entryPath", e)
+                    log.e("Extract failed: $entryPath", e)
                     failed++
                 } catch (e: Exception) {
-                    Log.e(TAG, "Extract failed: $entryPath", e)
+                    log.e("Extract failed: $entryPath", e)
                     failed++
                 }
             }
@@ -403,7 +403,7 @@ object FileOperations {
                 emit(ProgressState.Error(e.message ?: "Lỗi giải nén"))
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Extract archive failed", e)
+            log.e("Extract archive failed", e)
             emit(ProgressState.Error(e.message ?: "Lỗi giải nén không xác định"))
         }
 

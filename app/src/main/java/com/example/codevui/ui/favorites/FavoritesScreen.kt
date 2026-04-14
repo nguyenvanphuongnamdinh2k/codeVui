@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.SavedStateHandle
 import coil.compose.SubcomposeAsyncImage
@@ -73,7 +74,7 @@ fun FavoritesScreen(
     onFolderClick: (path: String) -> Unit = {},
     onFileClick: (item: FavoriteItem) -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
@@ -117,7 +118,7 @@ fun FavoritesScreen(
     }
 
     // ── Operation result snackbar
-    val operationResult by viewModel.resultManager.operationResult.collectAsState()
+    val operationResult by viewModel.resultManager.operationResult.collectAsStateWithLifecycle()
     LaunchedEffect(operationResult) {
         operationResult?.let { result ->
             if (result.success > 0) {

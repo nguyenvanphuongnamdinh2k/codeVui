@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.data.FileRepository
@@ -65,15 +66,15 @@ fun ArchiveScreen(
     onBack: () -> Unit = {},
     onNavigateToFolder: (String) -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selection = viewModel.selection
     val snackbarHostState = remember { SnackbarHostState() }
-    val extractResult by viewModel.extractResult.collectAsState()
+    val extractResult by viewModel.extractResult.collectAsStateWithLifecycle()
 
     // Service-based operation progress (extract/move qua ForegroundService)
-    val operationState by viewModel.operationState.collectAsState()
-    val operationTitle by viewModel.operationTitle.collectAsState()
-    val isDialogHidden by viewModel.isDialogHidden.collectAsState()
+    val operationState by viewModel.operationState.collectAsStateWithLifecycle()
+    val operationTitle by viewModel.operationTitle.collectAsStateWithLifecycle()
+    val isDialogHidden by viewModel.isDialogHidden.collectAsStateWithLifecycle()
 
     val fileActionState = remember { FileActionState(androidx.lifecycle.SavedStateHandle()) }
     val dialogManager = rememberDialogManager()
