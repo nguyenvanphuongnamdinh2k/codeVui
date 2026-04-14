@@ -414,15 +414,30 @@ formatDateFull(epochSeconds: Long) // "01/03/2024"
 
 ### Khi cần chi tiết thêm
 
+**Skills — playbook từng bước:**
+
 | Chi tiết về | Xem file |
 |---|---|
 | Thêm dialog | `.claude/skills/add-dialog/SKILL.md` |
 | Thêm screen | `.claude/skills/add-screen/SKILL.md` |
 | Thêm file operation | `.claude/skills/add-file-operation/SKILL.md` |
 | Thêm thumbnail fetcher | `.claude/skills/add-thumbnail-fetcher/SKILL.md` |
+
+**Rules — convention bắt buộc:**
+
+| Chi tiết về | Xem file |
+|---|---|
 | File operations + progress | `.claude/rules/file-operations.md` |
 | Kotlin style | `.claude/rules/kotlin-style.md` |
 | Compose style | `.claude/rules/compose-style.md` |
 | MVVM convention | `.claude/rules/mvvm.md` |
 | Workflow | `.claude/rules/workflow.md` |
+
+**Reference — tra cứu khi cần:**
+
+| Chi tiết về | Xem file |
+|---|---|
+| Room schema, DAO, Migration | `.claude/reference/database.md` |
+| Dialog patterns, DialogManager | `.claude/reference/dialogs.md` |
+| UI components, FileListItem, SortBar | `.claude/reference/ui-components.md` |
 
