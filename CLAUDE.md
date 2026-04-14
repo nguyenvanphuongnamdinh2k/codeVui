@@ -384,7 +384,8 @@ formatDateFull(epochSeconds: Long) // "01/03/2024"
 1. **Đọc CLAUDE.md này**
 2. **Đọc TASKS.md** (`.claude/TASKS.md`)
 3. **Đọc skill liên quan** (`.claude/skills/`)
-4. **Xác nhận đã đọc đủ** trước khi sửa code
+4. **Đọc rule liên quan** (`.claude/rules/`) — xem bảng lookup bên dưới
+5. **Xác nhận đã đọc đủ** trước khi sửa code
 
 ### Convention quan trọng
 
