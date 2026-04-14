@@ -5,7 +5,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -71,7 +71,7 @@ fun OperationResultSnackbar(
     actionLabel: String = "Mở folder đích",
     onActionPerformed: (String) -> Unit = {}
 ) {
-    val result by resultManager.operationResult.collectAsState()
+    val result by resultManager.operationResult.collectAsStateWithLifecycle()
 
     LaunchedEffect(result) {
         result?.let { r ->

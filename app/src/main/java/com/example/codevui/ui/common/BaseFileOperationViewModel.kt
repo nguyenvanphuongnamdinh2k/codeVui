@@ -12,6 +12,7 @@ import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.model.ArchiveEntry
 import com.example.codevui.service.FileOperationService
 import com.example.codevui.service.OperationInfo
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,14 +64,16 @@ abstract class BaseFileOperationViewModel(
 
     private var boundService: FileOperationService? = null
     private var isBound = false
+    private var serviceObserveJob: Job? = null
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             val service = (binder as FileOperationService.LocalBinder).getService()
             boundService = service
 
-            // Observe tất cả operations từ service
-            viewModelScope.launch {
+            // Cancel job cũ trước khi tạo job mới (tránh duplicate collect khi reconnect)
+            serviceObserveJob?.cancel()
+            serviceObserveJob = viewModelScope.launch {
                 service.operationsMap.collect { opsMap ->
                     _operationsMap.value = opsMap
 

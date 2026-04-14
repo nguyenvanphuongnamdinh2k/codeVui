@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.codevui.data.FavoriteManager
 import com.example.codevui.data.FileOperations.ProgressState
@@ -46,7 +47,7 @@ fun FileListScreen(
     onTrashClick: () -> Unit = {},
     onFavoritesClick: () -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selection = viewModel.selection
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -54,13 +55,13 @@ fun FileListScreen(
     val context = LocalContext.current
     val favoritePaths by remember(context) {
         FavoriteManager.observeFavoritePaths(context)
-    }.collectAsState(initial = emptySet())
-    val operationResult by viewModel.operationResult.collectAsState()
+    }.collectAsStateWithLifecycle(initialValue = emptySet())
+    val operationResult by viewModel.operationResult.collectAsStateWithLifecycle()
 
     // ── Operation progress state ──────────────────────────────────────────
-    val operationState by viewModel.operationState.collectAsState()
-    val operationTitle by viewModel.operationTitle.collectAsState()
-    val isDialogHidden by viewModel.isDialogHidden.collectAsState()
+    val operationState by viewModel.operationState.collectAsStateWithLifecycle()
+    val operationTitle by viewModel.operationTitle.collectAsStateWithLifecycle()
+    val isDialogHidden by viewModel.isDialogHidden.collectAsStateWithLifecycle()
 
     val actions = selectionActionHandler(
         selectionState = selection,
@@ -135,10 +136,6 @@ fun FileListScreen(
                 listState.scrollToItem(0)
                 log.d("sort scrollToItem(0) done: firstVisibleIndex=${listState.firstVisibleItemIndex}")
             }
-            // Log mỗi khi firstVisibleItemIndex thay đổi
-            LaunchedEffect(listState.firstVisibleItemIndex) {
-                log.d("scroll: firstVisibleItemIndex=${listState.firstVisibleItemIndex} offset=${listState.firstVisibleItemScrollOffset}")
-            }
             AnimatedVisibility(visible = showSortBar, enter = fadeIn(), exit = fadeOut()) {
                 SortBar(
                     sortBy = uiState.sortBy,
@@ -151,7 +148,7 @@ fun FileListScreen(
             if (uiState.isLoading) { LoadingIndicator() }
 
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                itemsIndexed(uiState.files) { index, file ->
+                itemsIndexed(uiState.files, key = { _, file -> file.path }) { index, file ->
                     FileListItem(
                         file = file,
                         showDivider = index < uiState.files.lastIndex,

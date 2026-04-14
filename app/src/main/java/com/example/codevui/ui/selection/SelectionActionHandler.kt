@@ -7,7 +7,7 @@ import android.content.Intent
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,7 +80,7 @@ fun selectionActionHandler(
     // race condition giữa toggle favorite và hiển thị menu.
     val allFavoritePaths by remember(context) {
         FavoriteManager.observeFavoritePaths(context)
-    }.collectAsState(initial = emptySet())
+    }.collectAsStateWithLifecycle(initialValue = emptySet())
 
     val selectedCount = selectionState.selectedCount
     val favoriteCount = remember(selectionState.selectedIds, allFavoritePaths) {

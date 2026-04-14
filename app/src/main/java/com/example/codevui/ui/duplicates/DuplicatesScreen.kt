@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.codevui.data.FileOperations.ProgressState
 import com.example.codevui.model.DuplicateGroup
@@ -50,7 +51,7 @@ fun DuplicatesScreen(
     onNavigateToFolder: (String) -> Unit = {},
     onTrashClick: () -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selection = viewModel.selection
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -59,9 +60,9 @@ fun DuplicatesScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     // Operation state
-    val operationState by viewModel.operationState.collectAsState()
-    val operationTitle by viewModel.operationTitle.collectAsState()
-    val isDialogHidden by viewModel.isDialogHidden.collectAsState()
+    val operationState by viewModel.operationState.collectAsStateWithLifecycle()
+    val operationTitle by viewModel.operationTitle.collectAsStateWithLifecycle()
+    val isDialogHidden by viewModel.isDialogHidden.collectAsStateWithLifecycle()
     val isOperationRunning = operationState is ProgressState.Running || operationState is ProgressState.Counting
 
     // Compute all duplicate item IDs (non-original items) from all groups

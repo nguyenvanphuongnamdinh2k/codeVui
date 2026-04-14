@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.codevui.data.FavoriteManager
 import com.example.codevui.data.FileOperations.OperationType
@@ -70,22 +71,22 @@ fun BrowseScreen(
     onSearchClick: () -> Unit = {},
     onTrashClick: () -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selection = viewModel.selection
     val snackbarHostState = remember { SnackbarHostState() }
-    val operationResult by viewModel.operationResult.collectAsState()
+    val operationResult by viewModel.operationResult.collectAsStateWithLifecycle()
 
     // Observe favorite paths → overlay yellow star icon lên file/folder rows
     // (giống MyFiles file_list_item.xml ImageView favorite_icon).
     val context = LocalContext.current
     val favoritePaths by remember(context) {
         FavoriteManager.observeFavoritePaths(context)
-    }.collectAsState(initial = emptySet())
+    }.collectAsStateWithLifecycle(initialValue = emptySet())
 
     // ── Operation progress state ──────────────────────────────────────────
-    val operationState by viewModel.operationState.collectAsState()
-    val operationTitle by viewModel.operationTitle.collectAsState()
-    val isDialogHidden by viewModel.isDialogHidden.collectAsState()
+    val operationState by viewModel.operationState.collectAsStateWithLifecycle()
+    val operationTitle by viewModel.operationTitle.collectAsStateWithLifecycle()
+    val isDialogHidden by viewModel.isDialogHidden.collectAsStateWithLifecycle()
 
     // Password dialog state
     var showPasswordDialog by remember { mutableStateOf(false) }
@@ -635,7 +636,7 @@ private fun LazyListScope.folderItems(
     favoritePaths: Set<String> = emptySet(),
     hasNext: Boolean = false
 ) {
-    itemsIndexed(folders) { index, folder ->
+    itemsIndexed(folders, key = { _, folder -> folder.path }) { index, folder ->
         val id = "folder:${folder.path}"
         FolderListItem(
             folder = folder,
@@ -658,7 +659,7 @@ private fun LazyListScope.fileItems(
     isLandscape: Boolean = false,
     favoritePaths: Set<String> = emptySet()
 ) {
-    itemsIndexed(files) { index, file ->
+    itemsIndexed(files, key = { _, file -> file.path }) { index, file ->
         val id = "file:${file.path}"
         FileListItem(
             file = file,

@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
 import com.example.codevui.data.FavoriteManager
@@ -58,24 +59,24 @@ fun SearchScreen(
     onNavigateToFolder: (String) -> Unit = {},
     onFavoritesClick: () -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selection = viewModel.selection
     val snackbarHostState = remember { SnackbarHostState() }
-    val operationResult by viewModel.operationResult.collectAsState()
+    val operationResult by viewModel.operationResult.collectAsStateWithLifecycle()
 
     // Observe favorite paths → overlay star icon lên file/folder rows
     val context = LocalContext.current
     val favoritePaths by remember(context) {
         FavoriteManager.observeFavoritePaths(context)
-    }.collectAsState(initial = emptySet())
+    }.collectAsStateWithLifecycle(initialValue = emptySet())
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val isLandscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
     // ── Operation progress state ──────────────────────────────────────────
-    val operationState by viewModel.operationState.collectAsState()
-    val operationTitle by viewModel.operationTitle.collectAsState()
-    val isDialogHidden by viewModel.isDialogHidden.collectAsState()
+    val operationState by viewModel.operationState.collectAsStateWithLifecycle()
+    val operationTitle by viewModel.operationTitle.collectAsStateWithLifecycle()
+    val isDialogHidden by viewModel.isDialogHidden.collectAsStateWithLifecycle()
 
     val actions = selectionActionHandler(
         selectionState = selection,

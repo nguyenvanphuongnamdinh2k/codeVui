@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
 import com.example.codevui.data.FavoriteManager
@@ -44,14 +45,14 @@ fun RecentFilesScreen(
     onFavoritesClick: () -> Unit = {},
     isLandscape: Boolean = false
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selection = viewModel.selection
 
     // Observe favorite paths → overlay star icon lên file rows
     val context = LocalContext.current
     val favoritePaths by remember(context) {
         FavoriteManager.observeFavoritePaths(context)
-    }.collectAsState(initial = emptySet())
+    }.collectAsStateWithLifecycle(initialValue = emptySet())
 
     // Khi navigate từ Home với long click — chờ data load xong rồi select
     LaunchedEffect(initialSelectedPath, uiState.files) {
@@ -60,10 +61,10 @@ fun RecentFilesScreen(
         }
     }
     val snackbarHostState = remember { SnackbarHostState() }
-    val operationResult by viewModel.operationResult.collectAsState()
-    val operationState by viewModel.operationState.collectAsState()
-    val operationTitle by viewModel.operationTitle.collectAsState()
-    val isDialogHidden by viewModel.isDialogHidden.collectAsState()
+    val operationResult by viewModel.operationResult.collectAsStateWithLifecycle()
+    val operationState by viewModel.operationState.collectAsStateWithLifecycle()
+    val operationTitle by viewModel.operationTitle.collectAsStateWithLifecycle()
+    val isDialogHidden by viewModel.isDialogHidden.collectAsStateWithLifecycle()
 
     val actions = selectionActionHandler(
         selectionState = selection,

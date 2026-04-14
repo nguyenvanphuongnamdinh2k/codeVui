@@ -15,7 +15,6 @@ data class FileListUiState(
     val ascending: Boolean = false,
     val isLoading: Boolean = false
 ) {
-    /** Header title: "1203 ảnh (3,85 GB)" */
-    val headerTitle: String
-        get() = "${files.size} ${title.lowercase()} (${formatFileSize(totalSizeBytes)})"
+    /** Header title: "1203 ảnh (3,85 GB)" — tính 1 lần khi khởi tạo object */
+    val headerTitle: String = "${files.size} ${title.lowercase()} (${formatFileSize(totalSizeBytes)})"
 }

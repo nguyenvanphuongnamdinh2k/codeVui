@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.codevui.ui.selection.SelectionCheckbox
 import com.example.codevui.util.formatFileSize
@@ -46,7 +47,7 @@ fun UnusedAppsScreen(
     viewModel: UnusedAppsViewModel = viewModel(),
     onBack: () -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selection = viewModel.selection
     val context = LocalContext.current
 
